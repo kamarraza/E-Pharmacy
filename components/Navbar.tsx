@@ -94,7 +94,7 @@ export default function Navbar() {
               <a href="/" className="text-white font-bold text-lg sm:text-xl hover:text-yellow-300 transition duration-300 transform hover:scale-105">E-Pharmacy</a>
             </div>
             <div className="hidden md:ml-6 md:flex md:space-x-8">
-              <a href="/" className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
+              <a href="/" className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
                 <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
@@ -102,13 +102,13 @@ export default function Navbar() {
               </a>
               {user?.role === 'patient' && (
                 <>
-                  <a href="/upload" className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
+                  <a href="/upload" className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
                     <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     Upload Prescription
                   </a>
-                  <a href="/history" className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
+                  <a href="/history" className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
                     <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
@@ -116,7 +116,7 @@ export default function Navbar() {
                   </a>
                 </>
               )}
-              <a href="/pharmacies" className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
+              <a href="/pharmacies" className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
                 <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
@@ -124,13 +124,13 @@ export default function Navbar() {
               </a>
               {user?.role === 'pharmacist' && (
                 <>
-                  <a href="/subscribe" className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
+                  <a href="/subscribe" className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
                     <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192L5.636 18.364M12 2.25a9.75 9.75 0 100 19.5 9.75 9.75 0 000-19.5z" />
                     </svg>
                     Subscribe
                   </a>
-                  <a href="/dashboard" className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
+                  <a href="/dashboard" className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300 transform hover:scale-105 flex items-center">
                     <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
@@ -145,7 +145,7 @@ export default function Navbar() {
           {isMobileMenuOpen && (
             <div className="md:hidden absolute top-full left-0 right-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 shadow-lg z-40 border-t border-white border-opacity-10 animate-in slide-in-from-top-2 duration-200">
               <div className="px-2 pt-2 pb-3 space-y-1 max-h-96 overflow-y-auto">
-                <a href="/" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
+                <a href="/" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
                   <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
@@ -153,13 +153,13 @@ export default function Navbar() {
                 </a>
                 {user?.role === 'patient' && (
                   <>
-                    <a href="/upload" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
+                    <a href="/upload" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
                       <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                       </svg>
                       Upload Prescription
                     </a>
-                    <a href="/history" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
+                    <a href="/history" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
                       <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
@@ -167,7 +167,7 @@ export default function Navbar() {
                     </a>
                   </>
                 )}
-                <a href="/pharmacies" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
+                <a href="/pharmacies" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
                   <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
@@ -175,13 +175,13 @@ export default function Navbar() {
                 </a>
                 {user?.role === 'pharmacist' && (
                   <>
-                    <a href="/subscribe" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
+                    <a href="/subscribe" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
                       <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192L5.636 18.364M12 2.25a9.75 9.75 0 100 19.5 9.75 9.75 0 000-19.5z" />
                       </svg>
                       Subscribe
                     </a>
-                    <a href="/dashboard" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
+                    <a href="/dashboard" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 block px-3 py-2 rounded-md text-base font-medium flex items-center transition duration-200">
                       <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                       </svg>
@@ -209,7 +209,7 @@ export default function Navbar() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <a href="/login" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 block px-3 py-2 rounded-md text-base font-medium transition duration-200">
+                      <a href="/login" onClick={closeMobileMenu} className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 block px-3 py-2 rounded-md text-base font-medium transition duration-200">
                         Login
                       </a>
                       <a href="/register" onClick={closeMobileMenu} className="bg-white text-indigo-600 block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-100 text-center transition duration-200">
@@ -254,7 +254,7 @@ export default function Navbar() {
                 </div>
               ) : (
                 <div className="flex items-center space-x-4">
-                  <a href="/login" className="text-white hover:bg-white hover:bg-opacity-20 px-3 py-2 rounded-md text-sm font-medium transition duration-300">
+                  <a href="/login" className="text-white hover:bg-white hover:bg-opacity-20 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300">
                     Login
                   </a>
                   <a href="/register" className="bg-white text-indigo-600 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition duration-300">
