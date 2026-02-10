@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  mongo:
+    image: mongo:6.0
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      PATIENT_MONGODB_URI: mongodb://mongo:27017/patients
+      PHARMACIST_MONGODB_URI: mongodb://mongo:27017/pharmacists
+      MONGODB_URI: mongodb://mongo:27017/epharmacy
+      JWT_SECRET: development-secret
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: your-google-maps-api-key
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+    driver: local
