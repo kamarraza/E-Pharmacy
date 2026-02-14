@@ -40,11 +40,12 @@ export default function PharmacyMap({ pharmacies, userLocation, onPharmacySelect
       const loader = new Loader({
         apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
         version: 'weekly',
+        libraries: ['maps', 'marker'],
       });
 
       try {
-        const { Map } = await loader.importLibrary('maps');
-        const { Marker } = await loader.importLibrary('marker');
+        const { Map } = await (loader as any).importLibrary('maps');
+        const { Marker } = await (loader as any).importLibrary('marker');
 
         // Default center (can be user's location)
         const center = userLocation || { lat: 28.6139, lng: 77.2090 }; // Default to Delhi
