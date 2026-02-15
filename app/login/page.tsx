@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -33,7 +34,6 @@ export default function LoginPage() {
 
       if (response.ok) {
         setMessage('Login successful! Redirecting...');
-        // Redirect based on role
         if (formData.role === 'patient') {
           router.push('/upload');
         } else {
@@ -42,7 +42,7 @@ export default function LoginPage() {
       } else {
         setMessage(result.error || 'Login failed');
       }
-    } catch (error) {
+    } catch {
       setMessage('An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
@@ -50,73 +50,88 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-2xl overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
-          <h1 className="text-2xl font-bold text-white text-center">Login to E-Pharmacy</h1>
-        </div>
-        <div className="p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
+    <div className="min-h-screen px-4 py-14 sm:px-6 lg:px-8">
+      <div className="mx-auto grid w-full max-w-5xl gap-8 lg:grid-cols-2">
+        <section className="glass-panel rounded-3xl border border-white/10 p-8">
+          <p className="mb-4 inline-flex rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200">
+            Welcome Back
+          </p>
+          <h1 className="text-3xl font-bold text-white sm:text-4xl">Sign in to continue care coordination</h1>
+          <p className="mt-4 text-slate-300">
+            Access your account to upload prescriptions, track status, or manage incoming requests from nearby patients.
+          </p>
+          <div className="mt-8 space-y-3 text-sm text-slate-200">
+            <p>Patient flow: Upload, track, and review history.</p>
+            <p>Pharmacist flow: Receive alerts and assign requests quickly.</p>
+            <p>Single platform designed for speed and local coverage.</p>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-900/85 p-8 shadow-2xl">
+          <h2 className="text-2xl font-bold text-white">Login to E-Pharmacy</h2>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">I am a:</label>
+              <label className="mb-2 block text-sm font-medium text-slate-200">I am a</label>
               <select
                 name="role"
                 value={formData.role}
                 onChange={handleChange}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 focus:border-cyan-300 focus:outline-none"
               >
                 <option value="patient">Patient</option>
                 <option value="pharmacist">Pharmacist</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="mb-2 block text-sm font-medium text-slate-200">Email</label>
               <input
                 type="email"
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
                 placeholder="Enter your email"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="mb-2 block text-sm font-medium text-slate-200">Password</label>
               <input
                 type="password"
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
                 required
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
                 placeholder="Enter your password"
               />
             </div>
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white p-3 rounded-lg hover:from-green-600 hover:to-blue-600 transition duration-300 font-semibold disabled:opacity-50"
+              className="w-full rounded-xl bg-cyan-300 px-4 py-3 font-semibold text-slate-900 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isLoading ? 'Logging in...' : 'Login'}
             </button>
           </form>
           {message && (
-            <p className={`mt-4 text-center p-3 rounded-lg ${
-              message.includes('successful') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-            }`}>
+            <p
+              className={`mt-4 rounded-xl px-4 py-3 text-center text-sm ${
+                message.includes('successful')
+                  ? 'bg-emerald-300/15 text-emerald-100'
+                  : 'bg-rose-300/15 text-rose-100'
+              }`}
+            >
               {message}
             </p>
           )}
-          <div className="mt-6 text-center">
-            <p className="text-gray-600">
-              Don't have an account?{' '}
-              <a href="/register" className="text-blue-600 hover:text-blue-800 font-medium">
-                Register here
-              </a>
-            </p>
-          </div>
-        </div>
+          <p className="mt-6 text-sm text-slate-300">
+            Don&apos;t have an account?{' '}
+            <Link href="/register" className="font-semibold text-cyan-200 hover:text-cyan-100">
+              Register here
+            </Link>
+          </p>
+        </section>
       </div>
     </div>
   );

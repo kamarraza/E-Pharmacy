@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface Pharmacy {
   _id: string;
@@ -19,8 +19,9 @@ interface Pharmacy {
   subscriptionType: string | null;
   rating: number;
   reviewCount: number;
-  operatingHours?: any;
+  operatingHours?: Record<string, unknown>;
   services?: string[];
+  distanceKm?: number;
 }
 
 interface User {
@@ -49,12 +50,13 @@ export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [userCoordinates, setUserCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     checkAuthStatus();
+    loadDefaultPharmacies();
   }, []);
 
   useEffect(() => {
@@ -90,29 +92,141 @@ export default function UploadPage() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const searchPharmacies = async (location: string) => {
-    if (!location.trim()) return;
-
+  const loadDefaultPharmacies = async () => {
     setIsSearchingPharmacies(true);
     try {
-      const response = await fetch(`/api/pharmacies?location=${encodeURIComponent(location)}&limit=20`);
+      const response = await fetch('/api/pharmacies?limit=30');
       if (response.ok) {
-        const pharmacies = await response.json();
+        const pharmacies = (await response.json()) as Pharmacy[];
         setAvailablePharmacies(pharmacies);
       } else {
         setAvailablePharmacies([]);
       }
     } catch (error) {
-      console.error('Error searching pharmacies:', error);
+      console.error('Error loading default pharmacies:', error);
       setAvailablePharmacies([]);
     } finally {
       setIsSearchingPharmacies(false);
     }
   };
 
+  const getDistanceInKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  };
+
+  const searchPharmacies = async (
+    params: { location?: string; lat?: number; lng?: number; radius?: number; fetchAll?: boolean } = {}
+  ) => {
+    const { location, lat, lng, radius = 100000, fetchAll = false } = params;
+    const hasLocationText = !!location?.trim();
+    const hasCoordinates = typeof lat === 'number' && typeof lng === 'number';
+
+    if (!fetchAll && !hasLocationText && !hasCoordinates) return [] as Pharmacy[];
+
+    setIsSearchingPharmacies(true);
+    try {
+      let url = '/api/pharmacies?limit=50';
+      if (fetchAll) {
+        // keep base URL
+      } else if (hasCoordinates) {
+        url += `&lat=${lat}&lng=${lng}&radius=${radius}`;
+      } else if (hasLocationText) {
+        url += `&location=${encodeURIComponent(location as string)}`;
+      }
+
+      const response = await fetch(url);
+      if (response.ok) {
+        const pharmacies = (await response.json()) as Pharmacy[];
+        if (hasCoordinates) {
+          const withDistance = pharmacies
+            .map((pharmacy) => ({
+              ...pharmacy,
+              distanceKm: getDistanceInKm(
+                lat as number,
+                lng as number,
+                pharmacy.coordinates.lat,
+                pharmacy.coordinates.lng
+              ),
+            }))
+            .sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
+          setAvailablePharmacies(withDistance);
+          return withDistance;
+        } else {
+          setAvailablePharmacies(pharmacies);
+          return pharmacies;
+        }
+      } else {
+        setAvailablePharmacies([]);
+        return [] as Pharmacy[];
+      }
+    } catch (error) {
+      console.error('Error searching pharmacies:', error);
+      setAvailablePharmacies([]);
+      return [] as Pharmacy[];
+    } finally {
+      setIsSearchingPharmacies(false);
+    }
+    return [] as Pharmacy[];
+  };
+
+  const getCurrentLocationAndNearestPharmacies = () => {
+    if (!navigator.geolocation) {
+      setMessage('Geolocation is not supported by this browser.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserCoordinates({ lat: latitude, lng: longitude });
+        setSelectedPharmacyIds([]);
+
+        let resolvedCity = '';
+        try {
+          const cityResponse = await fetch(`/api/google/reverse-geocode?lat=${latitude}&lng=${longitude}`);
+          if (cityResponse.ok) {
+            const payload = await cityResponse.json();
+            resolvedCity = payload?.city || '';
+          }
+        } catch (error) {
+          console.error('Failed to resolve city from coordinates:', error);
+        }
+
+        if (resolvedCity) {
+          setFormData((prev) => ({ ...prev, location: resolvedCity }));
+        }
+
+        let found = await searchPharmacies({ lat: latitude, lng: longitude, radius: 100000 });
+        if (found.length === 0 && resolvedCity) {
+          found = await searchPharmacies({ location: resolvedCity });
+        }
+        if (found.length === 0) {
+          found = await searchPharmacies({ fetchAll: true });
+          if (found.length > 0) {
+            setMessage('Showing closest available pharmacies.');
+          } else {
+            setMessage('No pharmacies are currently available. Please try again later.');
+          }
+        }
+      },
+      () => {
+        setMessage('Unable to get your location. Please allow location access.');
+      }
+    );
+  };
+
   const handleLocationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newLocation = e.target.value;
     setFormData({ ...formData, location: newLocation });
+    setUserCoordinates(null);
 
     // Clear previous selections when location changes
     setSelectedPharmacyIds([]);
@@ -123,15 +237,20 @@ export default function UploadPage() {
       clearTimeout(searchTimeoutRef.current);
     }
 
+    if (!newLocation.trim()) {
+      loadDefaultPharmacies();
+      return;
+    }
+
     // Trigger search immediately if location is at least 3 characters, otherwise debounce
     if (newLocation.trim().length >= 3) {
       searchTimeoutRef.current = setTimeout(() => {
-        searchPharmacies(newLocation);
+        searchPharmacies({ location: newLocation });
         searchTimeoutRef.current = null;
       }, 150); // Quick response for longer searches
     } else if (newLocation.trim()) {
       searchTimeoutRef.current = setTimeout(() => {
-        searchPharmacies(newLocation);
+        searchPharmacies({ location: newLocation });
         searchTimeoutRef.current = null;
       }, 500); // Longer debounce for short inputs
     }
@@ -143,6 +262,12 @@ export default function UploadPage() {
         ? prev.filter(id => id !== pharmacyId)
         : [...prev, pharmacyId]
     );
+  };
+
+  const toggleSelectAllPharmacies = () => {
+    const allIds = availablePharmacies.map((pharmacy) => pharmacy._id);
+    const allSelected = allIds.length > 0 && allIds.every((id) => selectedPharmacyIds.includes(id));
+    setSelectedPharmacyIds(allSelected ? [] : allIds);
   };
 
   const validateFile = (file: File): string | null => {
@@ -285,6 +410,7 @@ export default function UploadPage() {
         setPreviews([]);
         setSelectedPharmacyIds([]);
         setAvailablePharmacies([]);
+        loadDefaultPharmacies();
         setTimeout(() => {
           setMessage('');
         }, 5000);
@@ -300,25 +426,25 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
+        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-white/10">
+          <div className="bg-slate-900 px-6 py-6">
             <h1 className="text-3xl font-bold text-white text-center">Upload Prescription</h1>
-            <p className="text-blue-100 text-center mt-2">Securely upload your prescription for pharmacy fulfillment</p>
+            <p className="text-slate-300 text-center mt-2">Securely upload your prescription for pharmacy fulfillment</p>
           </div>
 
           <div className="p-8">
             {!user && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4 mb-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-medium text-blue-800">Already have an account?</h3>
-                    <p className="text-sm text-blue-700 mt-1">Login to auto-fill your information and track your prescriptions.</p>
+                    <h3 className="text-sm font-medium text-cyan-800">Already have an account?</h3>
+                    <p className="text-sm text-cyan-700 mt-1">Login to auto-fill your information and track your prescriptions.</p>
                   </div>
-                  <a href="/login" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition duration-300">
+                  <Link href="/login" className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition duration-300">
                     Login
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}
@@ -386,11 +512,19 @@ export default function UploadPage() {
                       />
                       <button
                         type="button"
-                        onClick={() => formData.location.trim() && searchPharmacies(formData.location)}
+                        onClick={() => formData.location.trim() && searchPharmacies({ location: formData.location })}
                         disabled={!formData.location.trim() || isSearchingPharmacies}
                         className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isSearchingPharmacies ? '🔍' : 'Search'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={getCurrentLocationAndNearestPharmacies}
+                        disabled={isSearchingPharmacies}
+                        className="px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Nearest
                       </button>
                     </div>
                   </div>
@@ -508,42 +642,75 @@ export default function UploadPage() {
                       ) : formData.location.trim().length < 3 ? (
                         <>Type at least 3 characters to search pharmacies</>
                       ) : availablePharmacies.length > 0 ? (
-                        <>Found {availablePharmacies.length} pharmacies near "{formData.location}"</>
+                        <>
+                          Found {availablePharmacies.length} pharmacies near &quot;{formData.location}&quot;
+                          {userCoordinates ? ' (nearest first)' : ''}
+                        </>
                       ) : (
-                        <>No pharmacies found near "{formData.location}". Try a different location.</>
+                        <>No pharmacies found near &quot;{formData.location}&quot;. Try a different location.</>
                       )}
                     </p>
                   </div>
                 )}
 
+                {!formData.location && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-600">
+                      Showing registered pharmacies from our platform. You can still type a city/ZIP or use Nearest.
+                    </p>
+                  </div>
+                )}
+
                 {availablePharmacies.length > 0 && (
-                  <div className="space-y-3 max-h-60 overflow-y-auto">
-                    {availablePharmacies.map((pharmacy) => (
-                      <div
-                        key={pharmacy._id}
-                        className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                          selectedPharmacyIds.includes(pharmacy._id)
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => togglePharmacySelection(pharmacy._id)}
+                  <div>
+                    <div className="mb-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={toggleSelectAllPharmacies}
+                        className="text-sm font-medium text-blue-700 hover:text-blue-900"
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={selectedPharmacyIds.includes(pharmacy._id)}
-                                onChange={() => togglePharmacySelection(pharmacy._id)}
-                                className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
-                              <h3 className="font-medium text-gray-900">{pharmacy.name}</h3>
-                            </div>
-                            <p className="text-sm text-gray-600 mt-1">{pharmacy.address}</p>
-                            <div className="flex items-center mt-2 space-x-2">
+                        {availablePharmacies.every((pharmacy) => selectedPharmacyIds.includes(pharmacy._id))
+                          ? 'Clear all'
+                          : 'Select all'}
+                      </button>
+                    </div>
+                    <div className="space-y-3 max-h-60 overflow-y-auto">
+                      {availablePharmacies.map((pharmacy) => (
+                        <div
+                          key={pharmacy._id}
+                          className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                            selectedPharmacyIds.includes(pharmacy._id)
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                          onClick={() => togglePharmacySelection(pharmacy._id)}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPharmacyIds.includes(pharmacy._id)}
+                                  onChange={() => togglePharmacySelection(pharmacy._id)}
+                                  className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <h3 className="font-medium text-gray-900">{pharmacy.name}</h3>
+                              </div>
+                              <p className="text-sm text-gray-600 mt-1">{pharmacy.address}</p>
+                              {typeof pharmacy.distanceKm === 'number' && (
+                                <p className="text-xs text-emerald-700 mt-1">
+                                  Approx. {pharmacy.distanceKm.toFixed(1)} km away
+                                </p>
+                              )}
+                              <div className="flex items-center mt-2 space-x-2">
                               {pharmacy.isUsingService && (
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                   ★ Service Partner
+                                </span>
+                              )}
+                              {!pharmacy.isUsingService && !pharmacy.subscriptionType && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                  Registered Pharmacy
                                 </span>
                               )}
                               {pharmacy.supportsPrescriptionUpload && (
@@ -551,33 +718,34 @@ export default function UploadPage() {
                                   📄 Upload Support
                                 </span>
                               )}
-                              <div className="flex items-center">
-                                <span className="text-yellow-400 text-sm">★</span>
-                                <span className="text-xs text-gray-600 ml-1">
-                                  {pharmacy.rating} ({pharmacy.reviewCount} reviews)
-                                </span>
+                                <div className="flex items-center">
+                                  <span className="text-yellow-400 text-sm">★</span>
+                                  <span className="text-xs text-gray-600 ml-1">
+                                    {pharmacy.rating} ({pharmacy.reviewCount} reviews)
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {formData.location && !isSearchingPharmacies && availablePharmacies.length === 0 && (
+                {(formData.location || userCoordinates) && !isSearchingPharmacies && availablePharmacies.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
                     <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                     </svg>
                     <p>No pharmacies found in this area.</p>
-                    <p className="text-sm mt-1">Try a different location or contact support.</p>
+                    <p className="text-sm mt-1">Try a different location, click Nearest again, or contact support.</p>
                   </div>
                 )}
 
-                {!formData.location && (
+                {!formData.location && availablePharmacies.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    <p>Enter your location above to find available pharmacies.</p>
+                    <p>No registered pharmacies available right now.</p>
                   </div>
                 )}
 
