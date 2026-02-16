@@ -1,9 +1,17 @@
 import { NextRequest } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { getUserFromToken } from '@/lib/auth';
+import getPharmacyModel from '@/models/Pharmacy';
+
+export const runtime = 'nodejs';
 
 // Store active connections for SSE
-const activeConnections = new Map<string, ReadableStreamDefaultController>();
+type ActiveConnection = {
+  pharmacistId: string;
+  controller: ReadableStreamDefaultController;
+};
+
+const activeConnections = new Map<string, ActiveConnection>();
 
 export async function GET(request: NextRequest) {
   await dbConnect();
@@ -29,7 +37,10 @@ export async function GET(request: NextRequest) {
 
         // Store the connection
         const connectionId = `${user._id}-${Date.now()}`;
-        activeConnections.set(connectionId, controller);
+        activeConnections.set(connectionId, {
+          pharmacistId: user._id.toString(),
+          controller,
+        });
 
         // Clean up on disconnect
         request.signal.addEventListener('abort', () => {
@@ -66,63 +77,53 @@ export async function sendNotificationToPharmacists(prescription: {
   pharmacistIds?: string[];
 }) {
   const encoder = new TextEncoder();
-
-  // Get selected pharmacy IDs from prescription
   const selectedPharmacyIds = prescription.pharmacistIds || [];
+  const targetPharmacistIds = new Set<string>();
 
-  if (selectedPharmacyIds.length === 0) {
-    // Fallback to broadcasting to all if no specific pharmacies selected
-    const notification = {
-      type: 'new_prescription',
-      prescription: {
-        id: prescription._id,
-        patientName: prescription.patientName,
-        location: prescription.location,
-        createdAt: prescription.createdAt,
-        status: prescription.status
+  if (selectedPharmacyIds.length > 0) {
+    try {
+      const PharmacyModel = await getPharmacyModel();
+      const matchedPharmacies = await PharmacyModel.find(
+        { _id: { $in: selectedPharmacyIds } },
+        { pharmacistId: 1 }
+      ).lean<{ pharmacistId?: { toString: () => string } }[]>();
+
+      for (const pharmacy of matchedPharmacies) {
+        if (pharmacy.pharmacistId) {
+          targetPharmacistIds.add(pharmacy.pharmacistId.toString());
+        }
       }
-    };
-
-    const data = `data: ${JSON.stringify(notification)}\n\n`;
-
-    // Send to all active pharmacist connections
-    for (const [connectionId, controller] of activeConnections) {
-      try {
-        controller.enqueue(encoder.encode(data));
-      } catch (error) {
-        // Remove broken connections
-        activeConnections.delete(connectionId);
-      }
+    } catch (error) {
+      console.error('Failed to resolve target pharmacists for notification:', error);
     }
-    return;
   }
 
-  // Send targeted notifications to selected pharmacies
-  for (const pharmacyId of selectedPharmacyIds) {
-    const notification = {
-      type: 'new_prescription',
-      prescription: {
-        id: prescription._id,
-        patientName: prescription.patientName,
-        location: prescription.location,
-        createdAt: prescription.createdAt,
-        status: prescription.status,
-        pharmacyId: pharmacyId // Include pharmacy ID for targeted notification
-      }
-    };
+  const notification = {
+    type: 'new_prescription',
+    prescription: {
+      id: prescription._id,
+      patientName: prescription.patientName,
+      location: prescription.location,
+      createdAt: prescription.createdAt,
+      status: prescription.status,
+      selectedPharmacyIds,
+    },
+  };
 
-    const data = `data: ${JSON.stringify(notification)}\n\n`;
+  const data = `data: ${JSON.stringify(notification)}\n\n`;
 
-    // Find connections for this pharmacy's pharmacist
-    // Note: In a production system, you'd want to track which pharmacist owns which pharmacy
-    // For now, we'll send to all pharmacists (can be optimized later)
-    for (const [connectionId, controller] of activeConnections) {
-      try {
-        controller.enqueue(encoder.encode(data));
-      } catch (error) {
-        // Remove broken connections
-        activeConnections.delete(connectionId);
-      }
+  for (const [connectionId, connection] of activeConnections) {
+    const shouldSend =
+      targetPharmacistIds.size === 0 || targetPharmacistIds.has(connection.pharmacistId);
+    if (!shouldSend) {
+      continue;
+    }
+    try {
+      connection.controller.enqueue(encoder.encode(data));
+    } catch (error) {
+      // Remove broken connections
+      activeConnections.delete(connectionId);
+      console.error('Failed to deliver notification to active connection:', error);
     }
   }
 }

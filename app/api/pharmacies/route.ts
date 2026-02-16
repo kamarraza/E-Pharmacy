@@ -12,43 +12,109 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get('q'); // Search query for pharmacy name/address
     const location = searchParams.get('location'); // Location-based search for upload page
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined;
+    const onlySubscribed = searchParams.get('onlySubscribed') === '1';
 
     const PharmacyModel = await getPharmacyModel();
 
-    let pharmacies;
+    type PharmacyResult = {
+      _id: mongoose.Types.ObjectId;
+      pharmacistId?: mongoose.Types.ObjectId;
+      coordinates?: { lat?: number; lng?: number };
+      isUsingService?: boolean;
+      subscriptionType?: 'monthly' | 'yearly' | 'premium' | null;
+      rating?: number;
+      reviewCount?: number;
+      createdAt?: Date;
+      [key: string]: unknown;
+    };
+
+    const getPriority = (pharmacy: PharmacyResult) => {
+      // Highest priority: subscribed/active service pharmacies.
+      if (pharmacy.isUsingService || pharmacy.subscriptionType) return 3;
+      // Next: pharmacies registered with us.
+      if (pharmacy.pharmacistId) return 2;
+      // Lowest: generic listings.
+      return 1;
+    };
+
+    const sortPharmacies = (list: PharmacyResult[]) =>
+      list.sort((a, b) => {
+        const priorityDiff = getPriority(b) - getPriority(a);
+        if (priorityDiff !== 0) return priorityDiff;
+
+        const ratingDiff = (b.rating || 0) - (a.rating || 0);
+        if (ratingDiff !== 0) return ratingDiff;
+
+        const reviewDiff = (b.reviewCount || 0) - (a.reviewCount || 0);
+        if (reviewDiff !== 0) return reviewDiff;
+
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      });
+
+    const calculateDistanceMeters = (
+      sourceLat: number,
+      sourceLng: number,
+      targetLat: number,
+      targetLng: number
+    ) => {
+      const toRad = (value: number) => (value * Math.PI) / 180;
+      const earthRadiusM = 6371000;
+      const dLat = toRad(targetLat - sourceLat);
+      const dLng = toRad(targetLng - sourceLng);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(sourceLat)) *
+          Math.cos(toRad(targetLat)) *
+          Math.sin(dLng / 2) *
+          Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return earthRadiusM * c;
+    };
+
+    let pharmacies: PharmacyResult[];
 
     if (lat && lng) {
-      // Geospatial search with ranking
-      const coordinates = [parseFloat(lng), parseFloat(lat)];
+      const sourceLat = parseFloat(lat);
+      const sourceLng = parseFloat(lng);
+      const maxDistance = parseInt(radius, 10);
+      if (Number.isNaN(sourceLat) || Number.isNaN(sourceLng) || Number.isNaN(maxDistance)) {
+        return NextResponse.json({ error: 'Invalid lat/lng/radius' }, { status: 400 });
+      }
 
-      pharmacies = await PharmacyModel.find({
-        coordinates: {
-          $near: {
-            $geometry: {
-              type: 'Point',
-              coordinates: coordinates
-            },
-            $maxDistance: parseInt(radius) // radius in meters
+      const allPharmacies = await PharmacyModel.find({}).lean<PharmacyResult[]>();
+
+      const withDistance = allPharmacies
+        .map((pharmacy) => {
+          const targetLat = pharmacy.coordinates?.lat;
+          const targetLng = pharmacy.coordinates?.lng;
+          if (typeof targetLat !== 'number' || typeof targetLng !== 'number') {
+            return null;
           }
-        }
-      });
+          const distanceMeters = calculateDistanceMeters(sourceLat, sourceLng, targetLat, targetLng);
+          return { ...pharmacy, distanceMeters };
+        })
+        .filter(
+          (pharmacy): pharmacy is PharmacyResult & { distanceMeters: number } => !!pharmacy
+        )
+        .sort((a, b) => {
+          const distanceDiff = a.distanceMeters - b.distanceMeters;
+          if (distanceDiff !== 0) return distanceDiff;
 
-      // Sort by ranking: service users first, then by distance
-      pharmacies.sort((a: any, b: any) => {
-        // Service users get higher priority
-        if (a.isUsingService && !b.isUsingService) return -1;
-        if (!a.isUsingService && b.isUsingService) return 1;
+          const priorityDiff = getPriority(b) - getPriority(a);
+          if (priorityDiff !== 0) return priorityDiff;
 
-        // Within same service status, sort by rating
-        if (a.rating !== b.rating) return b.rating - a.rating;
+          return (b.rating || 0) - (a.rating || 0);
+        });
 
-        // If ratings are equal, sort by subscription type priority
-        const subscriptionPriority = { premium: 3, yearly: 2, monthly: 1, null: 0 };
-        const aPriority = subscriptionPriority[a.subscriptionType as keyof typeof subscriptionPriority] || 0;
-        const bPriority = subscriptionPriority[b.subscriptionType as keyof typeof subscriptionPriority] || 0;
+      const withinRadius = withDistance.filter((pharmacy) => pharmacy.distanceMeters <= maxDistance);
+      const nearestFallback = withinRadius.length > 0 ? withinRadius : withDistance.slice(0, 50);
 
-        return bPriority - aPriority;
-      });
+      pharmacies = nearestFallback.map(
+        (pharmacy) =>
+          Object.fromEntries(
+            Object.entries(pharmacy).filter(([key]) => key !== 'distanceMeters')
+          ) as PharmacyResult
+      );
 
     } else if (query) {
       // Text-based search
@@ -58,26 +124,37 @@ export async function GET(request: NextRequest) {
           { address: { $regex: query, $options: 'i' } },
           { location: { $regex: query, $options: 'i' } }
         ]
-      }).sort({ isUsingService: -1, rating: -1 });
+      }).lean<PharmacyResult[]>();
+      pharmacies = sortPharmacies(pharmacies);
     } else if (location) {
       // Location-based search for upload page
       pharmacies = await PharmacyModel.find({
         location: { $regex: location, $options: 'i' }
-      }).sort({ isUsingService: -1, rating: -1 });
+      }).lean<PharmacyResult[]>();
+      pharmacies = sortPharmacies(pharmacies);
     } else {
       // Return all pharmacies sorted by service usage and rating
-      pharmacies = await PharmacyModel.find({})
-        .sort({ isUsingService: -1, rating: -1 });
+      pharmacies = await PharmacyModel.find({}).lean<PharmacyResult[]>();
+      pharmacies = sortPharmacies(pharmacies);
     }
 
     // Filter pharmacies to only include those with valid pharmacist accounts
     const PharmacistUserModel = await getPharmacistUserModel();
-    const validPharmacistIds = await PharmacistUserModel.find({}, '_id').lean();
+    const validPharmacistIds = await PharmacistUserModel.find({}, '_id').lean<{ _id: mongoose.Types.ObjectId }[]>();
     const validPharmacistIdSet = new Set(validPharmacistIds.map((p: { _id: mongoose.Types.ObjectId }) => p._id.toString()));
 
-    const filteredPharmacies = pharmacies.filter((pharmacy: any) =>
-      pharmacy.pharmacistId && validPharmacistIdSet.has(pharmacy.pharmacistId.toString())
-    );
+    const hasLinkedPharmacists = validPharmacistIdSet.size > 0;
+
+    const filteredPharmacies = pharmacies.filter((pharmacy) => {
+      if (hasLinkedPharmacists) {
+        const hasValidPharmacist =
+          pharmacy.pharmacistId && validPharmacistIdSet.has(pharmacy.pharmacistId.toString());
+        if (!hasValidPharmacist) return false;
+      }
+
+      if (!onlySubscribed) return true;
+      return Boolean(pharmacy.isUsingService || pharmacy.subscriptionType);
+    });
 
     // Apply limit if specified
     const result = limit ? filteredPharmacies.slice(0, limit) : filteredPharmacies;
@@ -101,9 +178,9 @@ export async function POST(request: NextRequest) {
       message: 'Pharmacy registered successfully',
       id: pharmacy._id
     }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Pharmacy registration error:', error);
-    if (error.code === 11000) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
       return NextResponse.json({ error: 'Pharmacy already exists' }, { status: 400 });
     }
     return NextResponse.json({ error: 'Failed to register pharmacy' }, { status: 500 });

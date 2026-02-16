@@ -32,13 +32,18 @@ export const verifyToken = (token: string): UserPayload | null => {
 };
 
 export const getUserFromToken = async (token: string) => {
-  const payload = verifyToken(token);
-  if (!payload) return null;
+  try {
+    const payload = verifyToken(token);
+    if (!payload) return null;
 
-  if (!['patient', 'pharmacist'].includes(payload.role)) {
+    if (!['patient', 'pharmacist'].includes(payload.role)) {
+      return null;
+    }
+
+    const UserModel = await getUserModel(payload.role as 'patient' | 'pharmacist');
+    return await UserModel.findById(payload.id);
+  } catch (error) {
+    console.error('getUserFromToken error:', error);
     return null;
   }
-
-  const UserModel = await getUserModel(payload.role as 'patient' | 'pharmacist');
-  return await UserModel.findById(payload.id);
 };

@@ -59,9 +59,12 @@ export async function GET(request: NextRequest) {
     const location = searchParams.get('location');
     const status = searchParams.get('status') || 'pending';
 
-    const query: Record<string, any> = { status };
-    if (location) {
-      query.location = location;
+    const query: Record<string, unknown> = {};
+    if (status !== 'all') {
+      query.status = status;
+    }
+    if (location && location.trim()) {
+      query.location = { $regex: location, $options: 'i' };
     }
 
     const prescriptions = await Prescription.find(query).sort({ createdAt: -1 });

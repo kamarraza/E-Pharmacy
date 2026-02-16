@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import NotificationComponent from '@/components/NotificationComponent';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface Prescription {
   _id: string;
@@ -14,116 +15,294 @@ interface Prescription {
   status: string;
   location: string;
   createdAt: string;
+  pharmacyStatuses?: PharmacyStatus[];
+}
+
+interface PharmacyStatus {
+  pharmacyId?: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'fulfilled' | 'fulfillment_requested';
+  assignedAt?: string;
+  completedAt?: string;
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [location, setLocation] = useState('');
+  const [pharmacyId, setPharmacyId] = useState('');
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    if (location) {
-      fetchPrescriptions();
+  const fetchPrescriptions = useCallback(async (targetLocation: string) => {
+    if (!targetLocation.trim()) {
+      setPrescriptions([]);
+      return;
     }
-  }, [location]);
-
-  const fetchPrescriptions = async () => {
     try {
-      const response = await fetch(`/api/prescriptions?location=${location}&status=pending`);
+      const response = await fetch(`/api/prescriptions?location=${targetLocation}&status=all`);
       const data = await response.json();
       setPrescriptions(data);
-    } catch (error) {
+    } catch {
       console.error('Failed to fetch prescriptions');
     }
-  };
+  }, []);
 
-  const assignPrescription = async (id: string) => {
+  useEffect(() => {
+    const loadPharmacistLocation = async () => {
+      try {
+        const response = await fetch('/api/auth/me');
+        if (!response.ok) {
+          router.push('/login');
+          return;
+        }
+        const data = await response.json();
+        if (data?.user?.role !== 'pharmacist') {
+          router.push('/upload');
+          return;
+        }
+        const pharmacistLocation = data?.user?.location || '';
+        const pharmacistPharmacyId = data?.user?.pharmacyId || '';
+        setPharmacyId(pharmacistPharmacyId);
+        if (pharmacistLocation) {
+          setLocation(pharmacistLocation);
+          fetchPrescriptions(pharmacistLocation);
+        }
+      } catch (error) {
+        console.error('Failed to load pharmacist profile:', error);
+        router.push('/login');
+      }
+    };
+
+    loadPharmacistLocation();
+  }, [fetchPrescriptions, router]);
+
+  const handleNotificationRefresh = useCallback(() => {
+    fetchPrescriptions(location);
+  }, [fetchPrescriptions, location]);
+
+  const updatePrescriptionStatus = async (id: string, status: 'assigned' | 'request_fulfillment') => {
     try {
       const response = await fetch(`/api/prescriptions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'assigned' }), // Assume pharmacist ID later
+        body: JSON.stringify({ status }),
       });
+      const payload = await response.json().catch(() => ({}));
       if (response.ok) {
-        setMessage('Prescription assigned successfully!');
-        fetchPrescriptions();
+        setMessage(
+          status === 'request_fulfillment'
+            ? 'Patient confirmation requested for fulfillment.'
+            : 'Prescription accepted successfully.'
+        );
+        fetchPrescriptions(location);
       } else {
-        setMessage('Failed to assign');
+        setMessage(payload?.error || 'Failed to update prescription.');
       }
-    } catch (error) {
-      setMessage('Error assigning prescription');
+    } catch {
+      setMessage('Error updating prescription.');
     }
   };
 
+  const analytics = useMemo(() => {
+    const getOwnStatus = (item: Prescription) =>
+      item.pharmacyStatuses?.find((entry) => String(entry.pharmacyId) === pharmacyId)?.status;
+
+    const ownPrescriptions = prescriptions.filter((item) =>
+      item.pharmacyStatuses?.some((entry) => String(entry.pharmacyId) === pharmacyId)
+    );
+
+    const totalRequests = ownPrescriptions.length;
+    const completedPrescriptions = ownPrescriptions.filter((item) => getOwnStatus(item) === 'fulfilled').length;
+    const activePrescriptions = ownPrescriptions.filter((item) => getOwnStatus(item) !== 'fulfilled').length;
+    const uniquePatients = new Set(
+      ownPrescriptions
+        .filter((item) => {
+          const ownStatus = getOwnStatus(item);
+          return ownStatus === 'accepted' || ownStatus === 'fulfillment_requested' || ownStatus === 'fulfilled';
+        })
+        .map((item) => item.patientEmail?.toLowerCase() || item.patientName.toLowerCase())
+    ).size;
+    const today = new Date();
+    const todayRequests = ownPrescriptions.filter((item) => {
+      const created = new Date(item.createdAt);
+      return (
+        created.getDate() === today.getDate() &&
+        created.getMonth() === today.getMonth() &&
+        created.getFullYear() === today.getFullYear()
+      );
+    }).length;
+
+    return {
+      totalRequests,
+      completedPrescriptions,
+      activePrescriptions,
+      uniquePatients,
+      todayRequests,
+    };
+  }, [prescriptions, pharmacyId]);
+
+  const ownPrescriptions = useMemo(
+    () =>
+      prescriptions
+        .filter((item) => item.pharmacyStatuses?.some((entry) => String(entry.pharmacyId) === pharmacyId))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [prescriptions, pharmacyId]
+  );
+
+  const recentActivity = useMemo(
+    () =>
+      ownPrescriptions.slice(0, 8),
+    [ownPrescriptions]
+  );
+
+  const getOwnPharmacyStatus = (prescription: Prescription) =>
+    prescription.pharmacyStatuses?.find((entry) => String(entry.pharmacyId) === pharmacyId)?.status || 'pending';
+
+  const formatOwnStatus = (status: string) =>
+    status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-8 px-4 sm:py-12 sm:px-6 lg:px-8">
-      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-2xl p-4 sm:p-8">
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-4 sm:px-6 sm:py-4 rounded-t-xl -m-4 mb-6 sm:-m-8 sm:mb-8">
-          <h1 className="text-xl sm:text-2xl font-bold text-center">Pharmacist Dashboard</h1>
+    <div className="min-h-screen px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-6 rounded-3xl border border-white/10 bg-slate-900/80 p-8">
+          <p className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100">
+            Pharmacist Workspace
+          </p>
+          <h1 className="mt-4 text-3xl font-bold text-white sm:text-4xl">Dashboard</h1>
+          <p className="mt-2 text-slate-300">
+            Enter your location to monitor pending prescriptions and assign requests in real time.
+          </p>
         </div>
 
-        <NotificationComponent
-          currentLocation={location}
-          onNewPrescription={fetchPrescriptions}
-        />
-
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Enter your location (City/ZIP)</label>
-          <input
-            type="text"
-            placeholder="Location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+        <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6">
+          <NotificationComponent
+            currentLocation={location}
+            onNewPrescription={handleNotificationRefresh}
           />
-        </div>
-        {message && <p className="mb-4 text-center text-black bg-gray-100 p-3 rounded-lg">{message}</p>}
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
-          {prescriptions.map((prescription) => (
-            <div key={prescription._id} className="bg-white rounded-lg shadow-md p-4 sm:p-6 hover:shadow-lg transition-shadow">
-              <h2 className="font-semibold text-lg text-black mb-3 sm:mb-4">{prescription.patientName}</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm text-black mb-4">
-                <p><strong>Email:</strong> {prescription.patientEmail}</p>
-                <p><strong>Phone:</strong> {prescription.patientPhone || 'Not provided'}</p>
-                <p><strong>Address:</strong> {prescription.patientAddress || 'Not provided'}</p>
-                <p><strong>Location:</strong> {prescription.location}</p>
-                <p><strong>Status:</strong> <span className={`px-2 py-1 rounded ${prescription.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-green-200 text-green-800'}`}>{prescription.status}</span></p>
-                <p><strong>Date:</strong> {new Date(prescription.createdAt).toLocaleDateString()}</p>
+
+          <div className="mt-5">
+            <label className="mb-2 block text-sm font-medium text-slate-200">Location (City/ZIP)</label>
+            <input
+              type="text"
+              placeholder="Enter your service location"
+              value={location}
+              onChange={(e) => {
+                const value = e.target.value;
+                setLocation(value);
+                fetchPrescriptions(value);
+              }}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
+            />
+          </div>
+
+          {message && <p className="mt-4 rounded-xl bg-white/10 px-4 py-3 text-sm text-slate-100">{message}</p>}
+
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-cyan-300/30 bg-cyan-300/10 p-4">
+              <p className="text-xs uppercase tracking-[0.1em] text-cyan-100">Total Activity</p>
+              <p className="mt-2 text-3xl font-bold text-white">{analytics.totalRequests}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-300/30 bg-emerald-300/10 p-4">
+              <p className="text-xs uppercase tracking-[0.1em] text-emerald-100">Completed</p>
+              <p className="mt-2 text-3xl font-bold text-white">{analytics.completedPrescriptions}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4">
+              <p className="text-xs uppercase tracking-[0.1em] text-amber-100">Open</p>
+              <p className="mt-2 text-3xl font-bold text-white">{analytics.activePrescriptions}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-300/30 bg-fuchsia-300/10 p-4">
+              <p className="text-xs uppercase tracking-[0.1em] text-fuchsia-100">Patients Visited</p>
+              <p className="mt-2 text-3xl font-bold text-white">{analytics.uniquePatients}</p>
+            </div>
+            <div className="rounded-2xl border border-indigo-300/30 bg-indigo-300/10 p-4">
+              <p className="text-xs uppercase tracking-[0.1em] text-indigo-100">Today</p>
+              <p className="mt-2 text-3xl font-bold text-white">{analytics.todayRequests}</p>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+            <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
+            {recentActivity.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-300">No activity yet for this location.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {recentActivity.map((item) => (
+                  <div key={item._id} className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/70 p-3">
+                    <div>
+                      <p className="text-sm text-white">{item.patientName}</p>
+                      <p className="text-xs text-slate-300">{item.location}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs uppercase text-slate-200">{formatOwnStatus(getOwnPharmacyStatus(item))}</p>
+                      <p className="text-xs text-slate-400">{new Date(item.createdAt).toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-              {prescription.notes && (
-                <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                  <strong className="text-blue-800">Notes:</strong>
-                  <p className="text-blue-700 mt-1">{prescription.notes}</p>
+            )}
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {ownPrescriptions.map((prescription) => (
+              <article key={prescription._id} className="rounded-2xl border border-white/10 bg-slate-950/70 p-5">
+                <h2 className="text-lg font-semibold text-white">{prescription.patientName}</h2>
+                <div className="mt-3 space-y-1 text-sm text-slate-200">
+                  <p><strong>Email:</strong> {prescription.patientEmail}</p>
+                  <p><strong>Phone:</strong> {prescription.patientPhone || 'Not provided'}</p>
+                  <p><strong>Address:</strong> {prescription.patientAddress || 'Not provided'}</p>
+                  <p><strong>Location:</strong> {prescription.location}</p>
+                  <p><strong>Status:</strong> {formatOwnStatus(getOwnPharmacyStatus(prescription))}</p>
+                  <p><strong>Date:</strong> {new Date(prescription.createdAt).toLocaleDateString()}</p>
                 </div>
-              )}
-              {prescription.prescriptionImages && prescription.prescriptionImages.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="font-medium text-gray-800 mb-2">Prescription Images ({prescription.prescriptionImages.length})</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+
+                {prescription.notes && (
+                  <div className="mt-4 rounded-xl bg-cyan-300/10 px-3 py-2 text-sm text-cyan-100">
+                    <strong>Notes:</strong> {prescription.notes}
+                  </div>
+                )}
+
+                {prescription.prescriptionImages.length > 0 && (
+                  <div className="mt-4 grid grid-cols-2 gap-3">
                     {prescription.prescriptionImages.map((image, index) => (
-                      <div key={index} className="relative group">
+                      <button
+                        type="button"
+                        key={`${prescription._id}-${index}`}
+                        onClick={() => window.open(image, '_blank')}
+                        className="group relative overflow-hidden rounded-xl border border-white/10"
+                      >
                         <img
                           src={image}
                           alt={`Prescription ${index + 1}`}
-                          className="w-full h-32 sm:h-40 object-cover rounded-lg shadow cursor-pointer hover:shadow-lg transition-shadow"
-                          onClick={() => window.open(image, '_blank')}
+                          className="h-28 w-full object-cover transition group-hover:scale-105"
                         />
-                        <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                        <span className="absolute bottom-2 right-2 rounded-md bg-black/60 px-2 py-1 text-xs text-white">
                           {index + 1}
-                        </div>
-                      </div>
+                        </span>
+                      </button>
                     ))}
                   </div>
-                </div>
-              )}
-              <button
-                onClick={() => assignPrescription(prescription._id)}
-                className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-blue-500 text-white px-6 py-2 rounded-lg hover:from-green-600 hover:to-blue-600 transition duration-300 font-semibold"
-              >
-                Assign to Me
-              </button>
-            </div>
-          ))}
+                )}
+
+                <button
+                  onClick={() =>
+                    updatePrescriptionStatus(
+                      prescription._id,
+                      getOwnPharmacyStatus(prescription) === 'pending' ? 'assigned' : 'request_fulfillment'
+                    )
+                  }
+                  disabled={getOwnPharmacyStatus(prescription) === 'fulfilled' || getOwnPharmacyStatus(prescription) === 'fulfillment_requested'}
+                  className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 font-semibold text-slate-900 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {getOwnPharmacyStatus(prescription) === 'fulfilled'
+                    ? 'Completed'
+                    : getOwnPharmacyStatus(prescription) === 'fulfillment_requested'
+                      ? 'Confirmation Requested'
+                      : getOwnPharmacyStatus(prescription) === 'accepted'
+                      ? 'Request Patient Confirmation'
+                      : 'Accept Prescription'}
+                </button>
+              </article>
+            ))}
+          </div>
         </div>
       </div>
     </div>
