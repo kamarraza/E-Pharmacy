@@ -13,7 +13,7 @@ const PrescriptionSchema = new mongoose.Schema({
   pharmacistIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // Array of assigned pharmacy IDs
   pharmacyStatuses: [{
     pharmacyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    status: { type: String, enum: ['pending', 'accepted', 'rejected', 'fulfilled'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'accepted', 'rejected', 'fulfilled', 'fulfillment_requested'], default: 'pending' },
     assignedAt: { type: Date, default: Date.now },
     completedAt: { type: Date }
   }],
@@ -22,7 +22,7 @@ const PrescriptionSchema = new mongoose.Schema({
 });
 
 // Create and export the Prescription model for main database
-let Prescription: any;
+let Prescription: mongoose.Model<unknown> | null = null;
 
 const getPrescriptionModel = async () => {
   if (Prescription) return Prescription;

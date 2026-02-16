@@ -318,6 +318,14 @@ export default function PharmaciesPage() {
     setSelectedPharmacy(pharmacy);
   };
 
+  useEffect(() => {
+    if (!selectedPharmacy) return;
+    const stillVisible = visiblePharmacies.some((pharmacy) => pharmacy._id === selectedPharmacy._id);
+    if (!stillVisible) {
+      setSelectedPharmacy(null);
+    }
+  }, [selectedPharmacy, visiblePharmacies]);
+
   return (
     <div className="min-h-screen px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -421,6 +429,8 @@ export default function PharmaciesPage() {
               pharmacies={visiblePharmacies}
               userLocation={userLocation || undefined}
               onPharmacySelect={handlePharmacySelect}
+              selectedPharmacyId={selectedPharmacy?._id || null}
+              heightClassName="h-[32rem]"
             />
           </section>
         </div>

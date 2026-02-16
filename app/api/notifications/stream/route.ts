@@ -3,6 +3,8 @@ import dbConnect from '@/lib/mongodb';
 import { getUserFromToken } from '@/lib/auth';
 import getPharmacyModel from '@/models/Pharmacy';
 
+export const runtime = 'nodejs';
+
 // Store active connections for SSE
 type ActiveConnection = {
   pharmacistId: string;

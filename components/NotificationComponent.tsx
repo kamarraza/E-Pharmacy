@@ -25,7 +25,7 @@ const STORAGE_NOTIFICATIONS_KEY = 'pharmacy_notifications';
 const STORAGE_UNREAD_KEY = 'pharmacy_notifications_unread';
 
 export default function NotificationComponent({
-  currentLocation,
+  currentLocation: _currentLocation,
   onNewPrescription = () => {},
   maxItems = 5,
   title = 'Recent Notifications',
@@ -43,16 +43,6 @@ export default function NotificationComponent({
   });
   const [isConnected, setIsConnected] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-
-  function isNearbyLocation(prescriptionLocation: string, pharmacistLocation: string): boolean {
-    if (!pharmacistLocation.trim()) return true;
-
-    const prescriptionLoc = prescriptionLocation.toLowerCase().trim();
-    const pharmacistLoc = pharmacistLocation.toLowerCase().trim();
-
-    if (prescriptionLoc === pharmacistLoc) return true;
-    return prescriptionLoc.includes(pharmacistLoc) || pharmacistLoc.includes(prescriptionLoc);
-  }
 
   useEffect(() => {
     let eventSource: EventSource | null = null;
@@ -73,11 +63,12 @@ export default function NotificationComponent({
             return;
           }
 
-          if (!isNearbyLocation(data.prescription.location, currentLocation)) {
-            return;
-          }
-
           setNotifications((prev) => {
+            const existed = prev.some(
+              (item) =>
+                item.prescription.id === data.prescription.id &&
+                item.prescription.createdAt === data.prescription.createdAt
+            );
             const merged = [data, ...prev].filter(
               (item, index, arr) =>
                 arr.findIndex(
@@ -89,8 +80,10 @@ export default function NotificationComponent({
             const clipped = merged.slice(0, 100);
             localStorage.setItem(STORAGE_NOTIFICATIONS_KEY, JSON.stringify(clipped));
 
-            const unreadCount = Number(localStorage.getItem(STORAGE_UNREAD_KEY) || '0');
-            localStorage.setItem(STORAGE_UNREAD_KEY, String(unreadCount + 1));
+            if (!existed) {
+              const unreadCount = Number(localStorage.getItem(STORAGE_UNREAD_KEY) || '0');
+              localStorage.setItem(STORAGE_UNREAD_KEY, String(unreadCount + 1));
+            }
             window.dispatchEvent(new Event('notification-updated'));
             return clipped;
           });
@@ -119,7 +112,7 @@ export default function NotificationComponent({
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (eventSource) eventSource.close();
     };
-  }, [currentLocation, onNewPrescription]);
+  }, [_currentLocation, onNewPrescription]);
 
   const clearNotifications = () => {
     setNotifications([]);

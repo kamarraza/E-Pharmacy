@@ -6,6 +6,7 @@ export default function SubscribePage() {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    password: '',
     phone: '',
     address: '',
     location: '',
@@ -18,21 +19,21 @@ export default function SubscribePage() {
     {
       id: 'monthly',
       name: 'Monthly Plan',
-      price: '$29/month',
+      price: '₹299/month',
       features: ['Access to prescriptions', 'Basic dashboard', 'Email support'],
       popular: false,
     },
     {
       id: 'yearly',
       name: 'Yearly Plan',
-      price: '$299/year',
+      price: '₹999/year',
       features: ['All monthly features', 'Priority matching', 'Phone support', 'Save 20%'],
       popular: true,
     },
     {
       id: 'premium',
       name: 'Premium Plan',
-      price: '$499/year',
+      price: '₹2999/year',
       features: ['All yearly features', 'Advanced analytics', 'Dedicated account manager', 'Custom integrations'],
       popular: false,
     },
@@ -65,6 +66,7 @@ export default function SubscribePage() {
         setFormData({
           name: '',
           email: '',
+          password: '',
           phone: '',
           address: '',
           location: '',
@@ -154,6 +156,18 @@ export default function SubscribePage() {
                   value={formData.email}
                   onChange={handleChange}
                   required
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 focus:border-cyan-300 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm text-slate-200">Password</label>
+                <input
+                  type="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  minLength={6}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 focus:border-cyan-300 focus:outline-none"
                 />
               </div>

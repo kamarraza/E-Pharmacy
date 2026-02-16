@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import PharmacyMap from '@/components/PharmacyMap';
 
 interface Pharmacy {
   _id: string;
@@ -44,6 +45,7 @@ export default function UploadPage() {
   });
   const [selectedPharmacyIds, setSelectedPharmacyIds] = useState<string[]>([]);
   const [availablePharmacies, setAvailablePharmacies] = useState<Pharmacy[]>([]);
+  const [activePharmacyId, setActivePharmacyId] = useState<string | null>(null);
   const [isSearchingPharmacies, setIsSearchingPharmacies] = useState(false);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -188,6 +190,7 @@ export default function UploadPage() {
         const { latitude, longitude } = position.coords;
         setUserCoordinates({ lat: latitude, lng: longitude });
         setSelectedPharmacyIds([]);
+        setActivePharmacyId(null);
 
         let resolvedCity = '';
         try {
@@ -230,6 +233,7 @@ export default function UploadPage() {
 
     // Clear previous selections when location changes
     setSelectedPharmacyIds([]);
+    setActivePharmacyId(null);
     setAvailablePharmacies([]);
 
     // Clear previous timeout
@@ -257,6 +261,7 @@ export default function UploadPage() {
   };
 
   const togglePharmacySelection = (pharmacyId: string) => {
+    setActivePharmacyId(pharmacyId);
     setSelectedPharmacyIds(prev =>
       prev.includes(pharmacyId)
         ? prev.filter(id => id !== pharmacyId)
@@ -264,10 +269,18 @@ export default function UploadPage() {
     );
   };
 
+  const handleMapPharmacySelect = (pharmacy: Pharmacy) => {
+    setActivePharmacyId(pharmacy._id);
+    setSelectedPharmacyIds((prev) =>
+      prev.includes(pharmacy._id) ? prev : [...prev, pharmacy._id]
+    );
+  };
+
   const toggleSelectAllPharmacies = () => {
     const allIds = availablePharmacies.map((pharmacy) => pharmacy._id);
     const allSelected = allIds.length > 0 && allIds.every((id) => selectedPharmacyIds.includes(id));
     setSelectedPharmacyIds(allSelected ? [] : allIds);
+    setActivePharmacyId(allSelected ? null : allIds[0] || null);
   };
 
   const validateFile = (file: File): string | null => {
@@ -409,6 +422,7 @@ export default function UploadPage() {
         });
         setPreviews([]);
         setSelectedPharmacyIds([]);
+        setActivePharmacyId(null);
         setAvailablePharmacies([]);
         loadDefaultPharmacies();
         setTimeout(() => {
@@ -674,61 +688,75 @@ export default function UploadPage() {
                           : 'Select all'}
                       </button>
                     </div>
-                    <div className="space-y-3 max-h-60 overflow-y-auto">
-                      {availablePharmacies.map((pharmacy) => (
-                        <div
-                          key={pharmacy._id}
-                          className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                            selectedPharmacyIds.includes(pharmacy._id)
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                          onClick={() => togglePharmacySelection(pharmacy._id)}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPharmacyIds.includes(pharmacy._id)}
-                                  onChange={() => togglePharmacySelection(pharmacy._id)}
-                                  className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                />
-                                <h3 className="font-medium text-gray-900">{pharmacy.name}</h3>
-                              </div>
-                              <p className="text-sm text-gray-600 mt-1">{pharmacy.address}</p>
-                              {typeof pharmacy.distanceKm === 'number' && (
-                                <p className="text-xs text-emerald-700 mt-1">
-                                  Approx. {pharmacy.distanceKm.toFixed(1)} km away
-                                </p>
-                              )}
-                              <div className="flex items-center mt-2 space-x-2">
-                              {pharmacy.isUsingService && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                  ★ Service Partner
-                                </span>
-                              )}
-                              {!pharmacy.isUsingService && !pharmacy.subscriptionType && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                                  Registered Pharmacy
-                                </span>
-                              )}
-                              {pharmacy.supportsPrescriptionUpload && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  📄 Upload Support
-                                </span>
-                              )}
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        {availablePharmacies.map((pharmacy) => (
+                          <div
+                            key={pharmacy._id}
+                            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                              selectedPharmacyIds.includes(pharmacy._id)
+                                ? 'border-blue-500 bg-blue-50'
+                                : activePharmacyId === pharmacy._id
+                                  ? 'border-indigo-400 bg-indigo-50'
+                                  : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                            onClick={() => togglePharmacySelection(pharmacy._id)}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
                                 <div className="flex items-center">
-                                  <span className="text-yellow-400 text-sm">★</span>
-                                  <span className="text-xs text-gray-600 ml-1">
-                                    {pharmacy.rating} ({pharmacy.reviewCount} reviews)
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedPharmacyIds.includes(pharmacy._id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={() => togglePharmacySelection(pharmacy._id)}
+                                    className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                  />
+                                  <h3 className="font-medium text-gray-900">{pharmacy.name}</h3>
+                                </div>
+                                <p className="text-sm text-gray-600 mt-1">{pharmacy.address}</p>
+                                {typeof pharmacy.distanceKm === 'number' && (
+                                  <p className="text-xs text-emerald-700 mt-1">
+                                    Approx. {pharmacy.distanceKm.toFixed(1)} km away
+                                  </p>
+                                )}
+                                <div className="flex items-center mt-2 space-x-2">
+                                {pharmacy.isUsingService && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    ★ Service Partner
                                   </span>
+                                )}
+                                {!pharmacy.isUsingService && !pharmacy.subscriptionType && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                    Registered Pharmacy
+                                  </span>
+                                )}
+                                {pharmacy.supportsPrescriptionUpload && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    📄 Upload Support
+                                  </span>
+                                )}
+                                  <div className="flex items-center">
+                                    <span className="text-yellow-400 text-sm">★</span>
+                                    <span className="text-xs text-gray-600 ml-1">
+                                      {pharmacy.rating} ({pharmacy.reviewCount} reviews)
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <div className="min-h-[20rem] rounded-lg border border-gray-200 bg-white p-2">
+                        <PharmacyMap
+                          pharmacies={availablePharmacies}
+                          userLocation={userCoordinates || undefined}
+                          selectedPharmacyId={activePharmacyId || selectedPharmacyIds[0] || null}
+                          onPharmacySelect={handleMapPharmacySelect}
+                          showInfoCard={false}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -754,6 +782,9 @@ export default function UploadPage() {
                     <p className="text-sm text-blue-800">
                       <strong>{selectedPharmacyIds.length} pharmacy(ies) selected</strong> - Your prescription will be sent to these pharmacies.
                     </p>
+                    <div className="mt-2 text-xs text-blue-700">
+                      Active details: {availablePharmacies.find((pharmacy) => pharmacy._id === (activePharmacyId || selectedPharmacyIds[0]))?.name || 'Select a pharmacy from the list'}
+                    </div>
                   </div>
                 )}
               </div>

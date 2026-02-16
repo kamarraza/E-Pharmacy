@@ -1,6 +1,7 @@
 'use client';
 
 import NotificationComponent from '@/components/NotificationComponent';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface Prescription {
@@ -14,11 +15,21 @@ interface Prescription {
   status: string;
   location: string;
   createdAt: string;
+  pharmacyStatuses?: PharmacyStatus[];
+}
+
+interface PharmacyStatus {
+  pharmacyId?: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'fulfilled' | 'fulfillment_requested';
+  assignedAt?: string;
+  completedAt?: string;
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [location, setLocation] = useState('');
+  const [pharmacyId, setPharmacyId] = useState('');
   const [message, setMessage] = useState('');
 
   const fetchPrescriptions = useCallback(async (targetLocation: string) => {
@@ -39,26 +50,36 @@ export default function DashboardPage() {
     const loadPharmacistLocation = async () => {
       try {
         const response = await fetch('/api/auth/me');
-        if (!response.ok) return;
+        if (!response.ok) {
+          router.push('/login');
+          return;
+        }
         const data = await response.json();
+        if (data?.user?.role !== 'pharmacist') {
+          router.push('/upload');
+          return;
+        }
         const pharmacistLocation = data?.user?.location || '';
+        const pharmacistPharmacyId = data?.user?.pharmacyId || '';
+        setPharmacyId(pharmacistPharmacyId);
         if (pharmacistLocation) {
           setLocation(pharmacistLocation);
           fetchPrescriptions(pharmacistLocation);
         }
       } catch (error) {
         console.error('Failed to load pharmacist profile:', error);
+        router.push('/login');
       }
     };
 
     loadPharmacistLocation();
-  }, [fetchPrescriptions]);
+  }, [fetchPrescriptions, router]);
 
   const handleNotificationRefresh = useCallback(() => {
     fetchPrescriptions(location);
   }, [fetchPrescriptions, location]);
 
-  const updatePrescriptionStatus = async (id: string, status: 'assigned' | 'fulfilled') => {
+  const updatePrescriptionStatus = async (id: string, status: 'assigned' | 'request_fulfillment') => {
     try {
       const response = await fetch(`/api/prescriptions/${id}`, {
         method: 'PUT',
@@ -68,8 +89,8 @@ export default function DashboardPage() {
       const payload = await response.json().catch(() => ({}));
       if (response.ok) {
         setMessage(
-          status === 'fulfilled'
-            ? 'Prescription marked as fulfilled.'
+          status === 'request_fulfillment'
+            ? 'Patient confirmation requested for fulfillment.'
             : 'Prescription accepted successfully.'
         );
         fetchPrescriptions(location);
@@ -82,14 +103,26 @@ export default function DashboardPage() {
   };
 
   const analytics = useMemo(() => {
-    const totalRequests = prescriptions.length;
-    const completedPrescriptions = prescriptions.filter((item) => item.status === 'fulfilled').length;
-    const activePrescriptions = prescriptions.filter((item) => item.status !== 'fulfilled').length;
+    const getOwnStatus = (item: Prescription) =>
+      item.pharmacyStatuses?.find((entry) => String(entry.pharmacyId) === pharmacyId)?.status;
+
+    const ownPrescriptions = prescriptions.filter((item) =>
+      item.pharmacyStatuses?.some((entry) => String(entry.pharmacyId) === pharmacyId)
+    );
+
+    const totalRequests = ownPrescriptions.length;
+    const completedPrescriptions = ownPrescriptions.filter((item) => getOwnStatus(item) === 'fulfilled').length;
+    const activePrescriptions = ownPrescriptions.filter((item) => getOwnStatus(item) !== 'fulfilled').length;
     const uniquePatients = new Set(
-      prescriptions.map((item) => item.patientEmail?.toLowerCase() || item.patientName.toLowerCase())
+      ownPrescriptions
+        .filter((item) => {
+          const ownStatus = getOwnStatus(item);
+          return ownStatus === 'accepted' || ownStatus === 'fulfillment_requested' || ownStatus === 'fulfilled';
+        })
+        .map((item) => item.patientEmail?.toLowerCase() || item.patientName.toLowerCase())
     ).size;
     const today = new Date();
-    const todayRequests = prescriptions.filter((item) => {
+    const todayRequests = ownPrescriptions.filter((item) => {
       const created = new Date(item.createdAt);
       return (
         created.getDate() === today.getDate() &&
@@ -105,15 +138,27 @@ export default function DashboardPage() {
       uniquePatients,
       todayRequests,
     };
-  }, [prescriptions]);
+  }, [prescriptions, pharmacyId]);
+
+  const ownPrescriptions = useMemo(
+    () =>
+      prescriptions
+        .filter((item) => item.pharmacyStatuses?.some((entry) => String(entry.pharmacyId) === pharmacyId))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [prescriptions, pharmacyId]
+  );
 
   const recentActivity = useMemo(
     () =>
-      [...prescriptions]
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 8),
-    [prescriptions]
+      ownPrescriptions.slice(0, 8),
+    [ownPrescriptions]
   );
+
+  const getOwnPharmacyStatus = (prescription: Prescription) =>
+    prescription.pharmacyStatuses?.find((entry) => String(entry.pharmacyId) === pharmacyId)?.status || 'pending';
+
+  const formatOwnStatus = (status: string) =>
+    status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
 
   return (
     <div className="min-h-screen px-4 py-10 sm:px-6 lg:px-8">
@@ -187,7 +232,7 @@ export default function DashboardPage() {
                       <p className="text-xs text-slate-300">{item.location}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs uppercase text-slate-200">{item.status}</p>
+                      <p className="text-xs uppercase text-slate-200">{formatOwnStatus(getOwnPharmacyStatus(item))}</p>
                       <p className="text-xs text-slate-400">{new Date(item.createdAt).toLocaleString()}</p>
                     </div>
                   </div>
@@ -197,7 +242,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            {prescriptions.map((prescription) => (
+            {ownPrescriptions.map((prescription) => (
               <article key={prescription._id} className="rounded-2xl border border-white/10 bg-slate-950/70 p-5">
                 <h2 className="text-lg font-semibold text-white">{prescription.patientName}</h2>
                 <div className="mt-3 space-y-1 text-sm text-slate-200">
@@ -205,7 +250,7 @@ export default function DashboardPage() {
                   <p><strong>Phone:</strong> {prescription.patientPhone || 'Not provided'}</p>
                   <p><strong>Address:</strong> {prescription.patientAddress || 'Not provided'}</p>
                   <p><strong>Location:</strong> {prescription.location}</p>
-                  <p><strong>Status:</strong> {prescription.status}</p>
+                  <p><strong>Status:</strong> {formatOwnStatus(getOwnPharmacyStatus(prescription))}</p>
                   <p><strong>Date:</strong> {new Date(prescription.createdAt).toLocaleDateString()}</p>
                 </div>
 
@@ -241,17 +286,19 @@ export default function DashboardPage() {
                   onClick={() =>
                     updatePrescriptionStatus(
                       prescription._id,
-                      prescription.status === 'assigned' ? 'fulfilled' : 'assigned'
+                      getOwnPharmacyStatus(prescription) === 'pending' ? 'assigned' : 'request_fulfillment'
                     )
                   }
-                  disabled={prescription.status === 'fulfilled'}
+                  disabled={getOwnPharmacyStatus(prescription) === 'fulfilled' || getOwnPharmacyStatus(prescription) === 'fulfillment_requested'}
                   className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 font-semibold text-slate-900 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {prescription.status === 'fulfilled'
+                  {getOwnPharmacyStatus(prescription) === 'fulfilled'
                     ? 'Completed'
-                    : prescription.status === 'assigned'
-                      ? 'Mark as Fulfilled'
-                      : 'Assign to Me'}
+                    : getOwnPharmacyStatus(prescription) === 'fulfillment_requested'
+                      ? 'Confirmation Requested'
+                      : getOwnPharmacyStatus(prescription) === 'accepted'
+                      ? 'Request Patient Confirmation'
+                      : 'Accept Prescription'}
                 </button>
               </article>
             ))}

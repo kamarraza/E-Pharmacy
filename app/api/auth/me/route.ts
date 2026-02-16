@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromToken } from '@/lib/auth';
+import getPharmacyModel from '@/models/Pharmacy';
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,6 +32,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
     }
 
+    let pharmacyId: string | null = null;
+    if (role === 'pharmacist' && id) {
+      const PharmacyModel = await getPharmacyModel();
+      const pharmacy = await PharmacyModel.findOne({ pharmacistId: id }).select('_id').lean<{ _id: unknown } | null>();
+      if (pharmacy?._id) {
+        pharmacyId = String(pharmacy._id);
+      }
+    }
+
     return NextResponse.json({
       user: {
         id,
@@ -39,6 +49,7 @@ export async function GET(request: NextRequest) {
         role,
         location,
         subscriptionType,
+        pharmacyId,
       },
     });
   } catch (error) {

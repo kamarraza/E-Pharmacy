@@ -22,8 +22,13 @@ interface NotificationPreview {
     patientName: string;
     location: string;
     createdAt: string;
+    status?: string;
+    selectedPharmacyIds?: string[];
   };
 }
+
+const STORAGE_NOTIFICATIONS_KEY = 'pharmacy_notifications';
+const STORAGE_UNREAD_KEY = 'pharmacy_notifications_unread';
 
 export default function Navbar() {
   const [user, setUser] = useState<User | null>(null);
@@ -59,8 +64,8 @@ export default function Navbar() {
   useEffect(() => {
     const loadNotificationState = () => {
       try {
-        const unread = Number(localStorage.getItem('pharmacy_notifications_unread') || '0');
-        const raw = localStorage.getItem('pharmacy_notifications');
+        const unread = Number(localStorage.getItem(STORAGE_UNREAD_KEY) || '0');
+        const raw = localStorage.getItem(STORAGE_NOTIFICATIONS_KEY);
         const parsed = raw ? (JSON.parse(raw) as NotificationPreview[]) : [];
         setUnreadCount(Number.isNaN(unread) ? 0 : unread);
         setNotificationPreview(Array.isArray(parsed) ? parsed.slice(0, 5) : []);
@@ -71,13 +76,65 @@ export default function Navbar() {
 
     loadNotificationState();
     window.addEventListener('notification-updated', loadNotificationState);
-    window.addEventListener('storage', loadNotificationState);
+      window.addEventListener('storage', loadNotificationState);
 
     return () => {
       window.removeEventListener('notification-updated', loadNotificationState);
       window.removeEventListener('storage', loadNotificationState);
     };
   }, []);
+
+  useEffect(() => {
+    if (user?.role !== 'pharmacist') return;
+    if (pathname === '/dashboard' || pathname === '/notifications') return;
+
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      eventSource = new EventSource('/api/notifications/stream');
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as NotificationPreview & { type?: string };
+          if (data.type !== 'new_prescription' || !data?.prescription?.id) return;
+
+          const raw = localStorage.getItem(STORAGE_NOTIFICATIONS_KEY);
+          const existing = raw ? (JSON.parse(raw) as NotificationPreview[]) : [];
+          const exists = existing.some(
+            (item) =>
+              item.prescription.id === data.prescription.id &&
+              item.prescription.createdAt === data.prescription.createdAt
+          );
+
+          if (!exists) {
+            const merged = [data, ...existing].slice(0, 100);
+            localStorage.setItem(STORAGE_NOTIFICATIONS_KEY, JSON.stringify(merged));
+            const unreadCount = Number(localStorage.getItem(STORAGE_UNREAD_KEY) || '0');
+            localStorage.setItem(STORAGE_UNREAD_KEY, String(unreadCount + 1));
+            window.dispatchEvent(new Event('notification-updated'));
+          }
+        } catch (error) {
+          console.error('Failed to process navbar notification stream event:', error);
+        }
+      };
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        reconnectTimer = setTimeout(connect, 5000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (eventSource) eventSource.close();
+    };
+  }, [pathname, user?.role]);
 
   const checkAuthStatus = async () => {
     try {
@@ -146,7 +203,7 @@ export default function Navbar() {
     const next = !isNotificationOpen;
     setIsNotificationOpen(next);
     if (next) {
-      localStorage.setItem('pharmacy_notifications_unread', '0');
+      localStorage.setItem(STORAGE_UNREAD_KEY, '0');
       setUnreadCount(0);
       window.dispatchEvent(new Event('notification-updated'));
     }

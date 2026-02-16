@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 export default function LoginPage() {
@@ -12,7 +11,6 @@ export default function LoginPage() {
   });
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -34,11 +32,9 @@ export default function LoginPage() {
 
       if (response.ok) {
         setMessage('Login successful! Redirecting...');
-        if (formData.role === 'patient') {
-          router.push('/upload');
-        } else {
-          router.push('/dashboard');
-        }
+        const redirectPath = formData.role === 'patient' ? '/upload' : '/dashboard';
+        window.location.assign(redirectPath);
+        return;
       } else {
         setMessage(result.error || 'Login failed');
       }
