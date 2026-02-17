@@ -17,10 +17,46 @@ export default function RegisterPage() {
   });
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isResolvingLocation, setIsResolvingLocation] = useState(false);
+  const [locationHint, setLocationHint] = useState('');
   const router = useRouter();
+
+  const resolveCityFromIndianPincode = async (rawLocation: string) => {
+    const value = rawLocation.trim();
+    if (!/^[1-9][0-9]{5}$/.test(value)) return value;
+
+    try {
+      setIsResolvingLocation(true);
+      setLocationHint('');
+
+      const response = await fetch(`/api/google/pincode-city?pincode=${encodeURIComponent(value)}`);
+      if (!response.ok) {
+        setLocationHint('Could not resolve city from PIN code.');
+        return value;
+      }
+
+      const payload = (await response.json()) as { city?: string };
+      const city = (payload.city || '').trim();
+      if (!city) {
+        setLocationHint('Could not resolve city from PIN code.');
+        return value;
+      }
+
+      setLocationHint(`City selected: ${city}`);
+      return city;
+    } catch {
+      setLocationHint('Could not resolve city from PIN code.');
+      return value;
+    } finally {
+      setIsResolvingLocation(false);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (e.target.name === 'location') {
+      setLocationHint('');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,11 +77,21 @@ export default function RegisterPage() {
     }
 
     try {
+      const resolvedLocation =
+        formData.role === 'pharmacist'
+          ? await resolveCityFromIndianPincode(formData.location)
+          : formData.location;
+
+      if (formData.role === 'pharmacist' && resolvedLocation !== formData.location) {
+        setFormData((prev) => ({ ...prev, location: resolvedLocation }));
+      }
+
       const response = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          location: resolvedLocation,
           subscriptionType: formData.role === 'pharmacist' ? null : undefined,
         }),
       });
@@ -180,10 +226,22 @@ export default function RegisterPage() {
                 name="location"
                 value={formData.location}
                 onChange={handleChange}
+                onBlur={async (e) => {
+                  const city = await resolveCityFromIndianPincode(e.target.value);
+                  if (city !== e.target.value) {
+                    setFormData((prev) => ({ ...prev, location: city }));
+                  }
+                }}
                 required
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
                 placeholder="Enter service location"
               />
+              {isResolvingLocation && (
+                <p className="mt-2 text-xs text-cyan-200">Resolving city from PIN code...</p>
+              )}
+              {!isResolvingLocation && locationHint && (
+                <p className="mt-2 text-xs text-cyan-200">{locationHint}</p>
+              )}
             </div>
           )}
 
