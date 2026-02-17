@@ -3,6 +3,11 @@ import { getUserFromToken } from '@/lib/auth';
 import getPharmacyModel from '@/models/Pharmacy';
 
 const getSafeString = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+const capitalizeFirstCharacter = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -81,11 +86,13 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
-    (user as { name: string }).name = name;
+    const role = getSafeString((user as { role?: unknown }).role);
+    const normalizedName = role === 'pharmacist' ? capitalizeFirstCharacter(name) : name;
+
+    (user as { name: string }).name = normalizedName;
     (user as { phone?: string }).phone = phone;
     (user as { address?: string }).address = address;
 
-    const role = getSafeString((user as { role?: unknown }).role);
     if (role === 'pharmacist') {
       (user as { location?: string }).location = location;
     }
@@ -97,7 +104,7 @@ export async function PUT(request: NextRequest) {
       const pharmacistId = (user as { _id: unknown })._id;
 
       const pharmacyUpdates: Record<string, string> = {
-        name,
+        name: normalizedName,
         email: getSafeString((user as { email?: unknown }).email),
       };
       if (phone) pharmacyUpdates.phone = phone;
@@ -111,7 +118,7 @@ export async function PUT(request: NextRequest) {
       message: 'Profile updated successfully',
       profile: {
         id: (user as { _id: { toString: () => string } })._id.toString(),
-        name,
+        name: normalizedName,
         email: getSafeString((user as { email?: unknown }).email),
         role,
         phone,

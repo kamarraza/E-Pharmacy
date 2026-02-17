@@ -1,8 +1,12 @@
 'use client';
 
+import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+type RegistrationMode = 'manual' | 'map';
+type Coordinates = { lat: number; lng: number };
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -19,6 +23,13 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isResolvingLocation, setIsResolvingLocation] = useState(false);
   const [locationHint, setLocationHint] = useState('');
+  const [registrationMode, setRegistrationMode] = useState<RegistrationMode>('manual');
+  const [mapPincode, setMapPincode] = useState('');
+  const [selectedCoordinates, setSelectedCoordinates] = useState<Coordinates | null>(null);
+  const [mapError, setMapError] = useState('');
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const markerRef = useRef<google.maps.Marker | null>(null);
   const router = useRouter();
 
   const resolveCityFromIndianPincode = async (rawLocation: string) => {
@@ -59,6 +70,197 @@ export default function RegisterPage() {
     }
   };
 
+  const applySelectedMapLocation = (
+    coordinates: Coordinates,
+    city: string,
+    formattedAddress: string,
+    sourceLabel: string
+  ) => {
+    setSelectedCoordinates(coordinates);
+    if (markerRef.current && mapInstanceRef.current) {
+      markerRef.current.setMap(null);
+    }
+    if (mapInstanceRef.current) {
+      markerRef.current = new google.maps.Marker({
+        map: mapInstanceRef.current,
+        position: coordinates,
+        title: 'Your pharmacy location',
+      });
+      mapInstanceRef.current.panTo(coordinates);
+      mapInstanceRef.current.setZoom(14);
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      location: city || prev.location,
+      address: formattedAddress || prev.address,
+    }));
+    setLocationHint(`Pointer set from ${sourceLabel}: ${city || 'selected area'}`);
+  };
+
+  const handleLocateByPincode = async () => {
+    if (!formData.name.trim()) {
+      window.alert('Please enter the pharmacy name first.');
+      return;
+    }
+    if (!/^[1-9][0-9]{5}$/.test(mapPincode.trim())) {
+      setMessage('Enter a valid 6-digit Indian PIN code.');
+      return;
+    }
+    if (!mapInstanceRef.current) {
+      setMessage('Map is still loading. Please try again.');
+      return;
+    }
+
+    setMessage('');
+    setIsResolvingLocation(true);
+    setLocationHint('');
+    try {
+      const response = await fetch(`/api/google/pincode-city?pincode=${encodeURIComponent(mapPincode.trim())}`);
+      if (!response.ok) {
+        setLocationHint('Could not find this PIN code on map.');
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        city?: string;
+        formattedAddress?: string;
+        coordinates?: Coordinates;
+      };
+      const coordinates = payload.coordinates;
+      if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lng !== 'number') {
+        setLocationHint('Could not find this PIN code on map.');
+        return;
+      }
+
+      const city = (payload.city || '').trim();
+      const formattedAddress = (payload.formattedAddress || '').trim();
+      const searchResponse = await fetch(
+        `/api/google/nearby-pharmacies?q=${encodeURIComponent(
+          `${formData.name.trim()} ${mapPincode.trim()}`
+        )}&limit=25`
+      );
+      if (!searchResponse.ok) {
+        setLocationHint('Could not search pharmacy by name at this PIN code.');
+        return;
+      }
+
+      const searchResults = (await searchResponse.json()) as Array<{
+        name?: string;
+        address?: string;
+        coordinates?: Coordinates;
+      }>;
+      const targetName = formData.name.trim().toLowerCase();
+      const pinDigits = mapPincode.trim();
+
+      const strictMatch = searchResults.find((item) => {
+        const resultName = (item.name || '').trim().toLowerCase();
+        const resultAddressDigits = (item.address || '').replace(/\D/g, '');
+        return resultName === targetName && resultAddressDigits.includes(pinDigits);
+      });
+
+      const looseMatch = searchResults.find((item) => {
+        const resultName = (item.name || '').trim().toLowerCase();
+        const resultAddressDigits = (item.address || '').replace(/\D/g, '');
+        return resultName.includes(targetName) && resultAddressDigits.includes(pinDigits);
+      });
+
+      const matched = strictMatch || looseMatch;
+      if (!matched?.coordinates) {
+        setLocationHint('No pharmacy found with this name at the given PIN code.');
+        return;
+      }
+
+      const matchedCoordinates = matched.coordinates;
+      const matchedAddress = (matched.address || '').trim();
+      const matchedName = (matched.name || formData.name).trim();
+      mapInstanceRef.current.panTo(matchedCoordinates);
+      mapInstanceRef.current.setZoom(16);
+
+      const shouldSetPointer = window.confirm(
+        `Found "${matchedName}" at PIN ${mapPincode.trim()}. Set pointer to this location?`
+      );
+
+      if (shouldSetPointer) {
+        applySelectedMapLocation(
+          matchedCoordinates,
+          city || formData.location,
+          matchedAddress || formattedAddress,
+          `PIN ${mapPincode.trim()}`
+        );
+      } else {
+        setLocationHint('Location previewed. Pointer was not set.');
+      }
+    } catch {
+      setLocationHint('Could not find this PIN code on map.');
+    } finally {
+      setIsResolvingLocation(false);
+    }
+  };
+
+  useEffect(() => {
+    if (formData.role !== 'pharmacist' || registrationMode !== 'map') return;
+    if (!mapRef.current || mapInstanceRef.current) return;
+
+    const initMap = async () => {
+      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        setMapError('Google Maps API key is missing.');
+        return;
+      }
+
+      try {
+        setOptions({ apiKey, version: 'weekly' });
+        await importLibrary('maps');
+
+        const map = new google.maps.Map(mapRef.current as HTMLDivElement, {
+          center: { lat: 28.6139, lng: 77.2090 },
+          zoom: 11,
+        });
+        mapInstanceRef.current = map;
+
+        map.addListener('click', async (event: google.maps.MapMouseEvent) => {
+          if (!event.latLng) return;
+
+          const nextCoordinates = {
+            lat: event.latLng.lat(),
+            lng: event.latLng.lng(),
+          };
+
+          try {
+            setIsResolvingLocation(true);
+            const response = await fetch(
+              `/api/google/reverse-geocode?lat=${nextCoordinates.lat}&lng=${nextCoordinates.lng}`
+            );
+            if (!response.ok) {
+              setLocationHint('Unable to resolve city from selected map point.');
+              return;
+            }
+            const payload = (await response.json()) as { city?: string; formattedAddress?: string };
+            const city = (payload.city || '').trim();
+            const formattedAddress = (payload.formattedAddress || '').trim();
+            const shouldSetPointer = window.confirm(
+              `Use ${city || 'this map point'} as pharmacy location?`
+            );
+            if (shouldSetPointer) {
+              applySelectedMapLocation(nextCoordinates, city, formattedAddress, 'map click');
+            } else {
+              setLocationHint('Map point previewed. Pointer was not set.');
+            }
+          } catch {
+            setLocationHint('Unable to resolve city from selected map point.');
+          } finally {
+            setIsResolvingLocation(false);
+          }
+        });
+      } catch {
+        setMapError('Unable to load Google Maps.');
+      }
+    };
+
+    initMap();
+  }, [formData.role, registrationMode]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -77,8 +279,14 @@ export default function RegisterPage() {
     }
 
     try {
+      if (formData.role === 'pharmacist' && registrationMode === 'map' && !selectedCoordinates) {
+        setMessage('Please select your pharmacy location on the map.');
+        setIsLoading(false);
+        return;
+      }
+
       const resolvedLocation =
-        formData.role === 'pharmacist'
+        formData.role === 'pharmacist' && registrationMode === 'manual'
           ? await resolveCityFromIndianPincode(formData.location)
           : formData.location;
 
@@ -92,6 +300,7 @@ export default function RegisterPage() {
         body: JSON.stringify({
           ...formData,
           location: resolvedLocation,
+          pharmacyCoordinates: formData.role === 'pharmacist' ? selectedCoordinates : null,
           subscriptionType: formData.role === 'pharmacist' ? null : undefined,
         }),
       });
@@ -132,7 +341,14 @@ export default function RegisterPage() {
             <select
               name="role"
               value={formData.role}
-              onChange={handleChange}
+              onChange={(e) => {
+                handleChange(e);
+                if (e.target.value !== 'pharmacist') {
+                  setRegistrationMode('manual');
+                  setSelectedCoordinates(null);
+                  setLocationHint('');
+                }
+              }}
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 focus:border-cyan-300 focus:outline-none"
             >
               <option value="patient">Patient</option>
@@ -219,30 +435,105 @@ export default function RegisterPage() {
           </div>
 
           {formData.role === 'pharmacist' && (
-            <div className="md:col-span-2">
-              <label className="mb-2 block text-sm font-medium text-slate-200">Service Location (City/ZIP)</label>
-              <input
-                type="text"
-                name="location"
-                value={formData.location}
-                onChange={handleChange}
-                onBlur={async (e) => {
-                  const city = await resolveCityFromIndianPincode(e.target.value);
-                  if (city !== e.target.value) {
-                    setFormData((prev) => ({ ...prev, location: city }));
-                  }
-                }}
-                required
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
-                placeholder="Enter service location"
-              />
+            <>
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-slate-200">
+                  Pharmacy Setup Method
+                </label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationMode('map')}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                      registrationMode === 'map'
+                        ? 'bg-cyan-300 text-slate-900'
+                        : 'border border-white/20 text-slate-200 hover:bg-white/10'
+                    }`}
+                  >
+                    Add on Map
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationMode('manual')}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                      registrationMode === 'manual'
+                        ? 'bg-cyan-300 text-slate-900'
+                        : 'border border-white/20 text-slate-200 hover:bg-white/10'
+                    }`}
+                  >
+                    Manual Details
+                  </button>
+                </div>
+              </div>
+
+              {registrationMode === 'map' && (
+                <div className="md:col-span-2">
+                  <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                    <input
+                      type="text"
+                      value={mapPincode}
+                      onChange={(e) => setMapPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
+                      placeholder="Enter 6-digit PIN code"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleLocateByPincode}
+                      className="rounded-xl bg-cyan-300 px-4 py-3 font-semibold text-slate-900 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isResolvingLocation}
+                    >
+                      Find on Map
+                    </button>
+                  </div>
+                  <p className="mb-2 text-sm text-slate-300">
+                    Enter PIN, find location on map, then confirm to set pointer. You can also click map directly.
+                  </p>
+                  <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-950/70">
+                    <div ref={mapRef} className="h-72 w-full" />
+                  </div>
+                  {mapError && <p className="mt-2 text-xs text-rose-200">{mapError}</p>}
+                  {selectedCoordinates && (
+                    <p className="mt-2 text-xs text-cyan-200">
+                      Selected: {selectedCoordinates.lat.toFixed(5)}, {selectedCoordinates.lng.toFixed(5)}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {registrationMode === 'manual' && (
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-medium text-slate-200">
+                    Service Location (Indian City/PIN)
+                  </label>
+                  <input
+                    type="text"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    onBlur={async (e) => {
+                      const city = await resolveCityFromIndianPincode(e.target.value);
+                      if (city !== e.target.value) {
+                        setFormData((prev) => ({ ...prev, location: city }));
+                      }
+                    }}
+                    required
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
+                    placeholder="Enter Indian city or 6-digit PIN"
+                  />
+                </div>
+              )}
+
               {isResolvingLocation && (
-                <p className="mt-2 text-xs text-cyan-200">Resolving city from PIN code...</p>
+                <div className="md:col-span-2">
+                  <p className="mt-2 text-xs text-cyan-200">Resolving location...</p>
+                </div>
               )}
               {!isResolvingLocation && locationHint && (
-                <p className="mt-2 text-xs text-cyan-200">{locationHint}</p>
+                <div className="md:col-span-2">
+                  <p className="mt-2 text-xs text-cyan-200">{locationHint}</p>
+                </div>
               )}
-            </div>
+            </>
           )}
 
           <div className="md:col-span-2">

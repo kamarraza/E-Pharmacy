@@ -3,6 +3,12 @@ import mongoose from 'mongoose';
 import getPharmacyModel from '@/models/Pharmacy';
 import getPharmacistUserModel from '@/models/PharmacistUser';
 
+const capitalizeFirstCharacter = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -168,7 +174,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const pharmacyData = await request.json();
+    const pharmacyData = (await request.json()) as Record<string, unknown>;
+    if (typeof pharmacyData.name === 'string') {
+      pharmacyData.name = capitalizeFirstCharacter(pharmacyData.name);
+    }
     const PharmacyModel = await getPharmacyModel();
 
     const pharmacy = new PharmacyModel(pharmacyData);

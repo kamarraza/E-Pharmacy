@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 type GeocodeResult = {
+  formatted_address?: string;
+  geometry?: {
+    location?: {
+      lat?: number;
+      lng?: number;
+    };
+  };
   address_components?: Array<{
     long_name?: string;
     types?: string[];
@@ -58,7 +65,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'City was not found for this PIN code' }, { status: 404 });
     }
 
-    return NextResponse.json({ city });
+    const lat = payload.results[0].geometry?.location?.lat;
+    const lng = payload.results[0].geometry?.location?.lng;
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return NextResponse.json({ error: 'Coordinates were not found for this PIN code' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      city,
+      formattedAddress: payload.results[0].formatted_address || '',
+      coordinates: { lat, lng },
+    });
   } catch (error) {
     console.error('Pincode city lookup error:', error);
     return NextResponse.json({ error: 'Failed to resolve city from PIN code' }, { status: 500 });
