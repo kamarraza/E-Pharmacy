@@ -7,6 +7,9 @@ type GooglePlace = {
   location?: { latitude?: number; longitude?: number };
   rating?: number;
   userRatingCount?: number;
+  nationalPhoneNumber?: string;
+  internationalPhoneNumber?: string;
+  websiteUri?: string;
 };
 
 export async function GET(request: NextRequest) {
@@ -32,7 +35,7 @@ export async function GET(request: NextRequest) {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,nextPageToken',
+        'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,nextPageToken',
     };
 
     const allPlaces: GooglePlace[] = [];
@@ -119,6 +122,8 @@ export async function GET(request: NextRequest) {
         },
         rating: place.rating || 0,
         reviewCount: place.userRatingCount || 0,
+        phone: place.internationalPhoneNumber || place.nationalPhoneNumber || '',
+        website: place.websiteUri || '',
       }));
 
     return NextResponse.json(normalized.slice(0, requestedLimit));

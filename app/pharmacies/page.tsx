@@ -22,6 +22,7 @@ interface Pharmacy {
   operatingHours?: Record<string, unknown>;
   services?: string[];
   source: 'platform' | 'google';
+  website?: string;
 }
 
 interface GoogleNearbyPharmacy {
@@ -34,6 +35,8 @@ interface GoogleNearbyPharmacy {
   };
   rating: number;
   reviewCount: number;
+  phone?: string;
+  website?: string;
 }
 
 export default function PharmaciesPage() {
@@ -114,7 +117,7 @@ export default function PharmaciesPage() {
         _id: `google-${item.placeId}`,
         name: item.name,
         email: '',
-        phone: '',
+        phone: item.phone || '',
         address: item.address,
         location: item.address,
         coordinates: item.coordinates,
@@ -125,6 +128,7 @@ export default function PharmaciesPage() {
         reviewCount: item.reviewCount || 0,
         services: [],
         source: 'google',
+        website: item.website || '',
       }));
 
       const platformKeySet = new Set(
@@ -226,7 +230,7 @@ export default function PharmaciesPage() {
             _id: `google-${item.placeId}`,
             name: item.name,
             email: '',
-            phone: '',
+            phone: item.phone || '',
             address: item.address,
             location: item.address,
             coordinates: item.coordinates,
@@ -237,6 +241,7 @@ export default function PharmaciesPage() {
             reviewCount: item.reviewCount || 0,
             services: [],
             source: 'google',
+            website: item.website || '',
           })
         );
 
@@ -442,10 +447,27 @@ export default function PharmaciesPage() {
               <div>
                 <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-300">Contact</h3>
                 <div className="mt-2 space-y-1 text-slate-200">
-                  <p>{selectedPharmacy.address}</p>
-                  {selectedPharmacy.phone && <p>{selectedPharmacy.phone}</p>}
-                  {selectedPharmacy.email && <p>{selectedPharmacy.email}</p>}
-                  <p>{selectedPharmacy.location}</p>
+                  {selectedPharmacy.address && <p>{selectedPharmacy.address}</p>}
+                  {selectedPharmacy.phone && <p>Phone: {selectedPharmacy.phone}</p>}
+                  {selectedPharmacy.email && <p>Email: {selectedPharmacy.email}</p>}
+                  {selectedPharmacy.website && (
+                    <p>
+                      Website:{' '}
+                      <a
+                        href={selectedPharmacy.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-200 underline hover:text-cyan-100"
+                      >
+                        {selectedPharmacy.website}
+                      </a>
+                    </p>
+                  )}
+                  {selectedPharmacy.location &&
+                    selectedPharmacy.location.trim().toLowerCase() !==
+                      (selectedPharmacy.address || '').trim().toLowerCase() && (
+                      <p>Area: {selectedPharmacy.location}</p>
+                    )}
                 </div>
               </div>
               <div>

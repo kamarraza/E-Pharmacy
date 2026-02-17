@@ -23,6 +23,9 @@ interface PharmacyDetail {
   completedAt?: string | null;
 }
 
+const STORAGE_PATIENT_NOTIFICATIONS_KEY = 'patient_notifications';
+const STORAGE_PATIENT_UNREAD_KEY = 'patient_notifications_unread';
+
 export default function HistoryPage() {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +146,26 @@ export default function HistoryPage() {
       if (!response.ok) {
         setError(payload?.error || 'Failed to confirm fulfillment');
         return;
+      }
+
+      try {
+        const prescription = prescriptions.find((item) => item._id === prescriptionId);
+        const pharmacy = prescription?.pharmacyDetails?.find((item) => item.pharmacyId === pharmacyId);
+        const notification = {
+          id: `patient-confirm-${prescriptionId}-${pharmacyId}-${Date.now()}`,
+          title: 'Fulfillment confirmed',
+          message: `${pharmacy?.name || 'Pharmacy'} marked prescription as fulfilled.`,
+          createdAt: new Date().toISOString(),
+        };
+        const raw = localStorage.getItem(STORAGE_PATIENT_NOTIFICATIONS_KEY);
+        const existing = raw ? (JSON.parse(raw) as typeof notification[]) : [];
+        const merged = [notification, ...existing].slice(0, 100);
+        localStorage.setItem(STORAGE_PATIENT_NOTIFICATIONS_KEY, JSON.stringify(merged));
+        const unreadCount = Number(localStorage.getItem(STORAGE_PATIENT_UNREAD_KEY) || '0');
+        localStorage.setItem(STORAGE_PATIENT_UNREAD_KEY, String(unreadCount + 1));
+        window.dispatchEvent(new Event('notification-updated'));
+      } catch {
+        // Keep fulfillment action successful even if local notification storage fails.
       }
 
       setSuccessMessage('Fulfillment confirmed successfully.');

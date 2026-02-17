@@ -25,6 +25,9 @@ interface PharmacyStatus {
   completedAt?: string;
 }
 
+const STORAGE_NOTIFICATIONS_KEY = 'pharmacy_notifications';
+const STORAGE_UNREAD_KEY = 'pharmacy_notifications_unread';
+
 export default function DashboardPage() {
   const router = useRouter();
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
@@ -88,6 +91,30 @@ export default function DashboardPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (response.ok) {
+        const targetPrescription = prescriptions.find((item) => item._id === id);
+        if (targetPrescription) {
+          try {
+            const nextStatus = status === 'request_fulfillment' ? 'fulfillment_requested' : 'accepted';
+            const notification = {
+              prescription: {
+                id: targetPrescription._id,
+                patientName: targetPrescription.patientName,
+                location: targetPrescription.location,
+                createdAt: new Date().toISOString(),
+                status: nextStatus,
+              },
+            };
+            const raw = localStorage.getItem(STORAGE_NOTIFICATIONS_KEY);
+            const existing = raw ? (JSON.parse(raw) as typeof notification[]) : [];
+            const merged = [notification, ...existing].slice(0, 100);
+            localStorage.setItem(STORAGE_NOTIFICATIONS_KEY, JSON.stringify(merged));
+            const unreadCount = Number(localStorage.getItem(STORAGE_UNREAD_KEY) || '0');
+            localStorage.setItem(STORAGE_UNREAD_KEY, String(unreadCount + 1));
+            window.dispatchEvent(new Event('notification-updated'));
+          } catch {
+            // Do not block status update flow if local notifications fail.
+          }
+        }
         setMessage(
           status === 'request_fulfillment'
             ? 'Patient confirmation requested for fulfillment.'

@@ -32,6 +32,9 @@ interface User {
   role: string;
 }
 
+const STORAGE_PATIENT_NOTIFICATIONS_KEY = 'patient_notifications';
+const STORAGE_PATIENT_UNREAD_KEY = 'patient_notifications_unread';
+
 export default function UploadPage() {
   const [user, setUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
@@ -72,18 +75,35 @@ export default function UploadPage() {
   const checkAuthStatus = async () => {
     try {
       const response = await fetch('/api/auth/me');
-      if (response.ok) {
-        const userData = await response.json();
-        setUser(userData.user);
-        // Auto-fill user information if logged in
-        if (userData.user.role === 'patient') {
-          // Note: In a real app, you'd fetch additional patient details
-          setFormData(prev => ({
-            ...prev,
-            patientName: userData.user.name,
-            patientEmail: userData.user.email,
-          }));
+      if (!response.ok) return;
+
+      const userData = await response.json();
+      setUser(userData.user);
+
+      // Auto-fill user information if logged in as patient.
+      if (userData.user.role === 'patient') {
+        let phone = '';
+        let address = '';
+
+        // Prefer richer profile data when available.
+        try {
+          const profileResponse = await fetch('/api/profile');
+          if (profileResponse.ok) {
+            const profileData = await profileResponse.json();
+            phone = profileData?.profile?.phone || '';
+            address = profileData?.profile?.address || '';
+          }
+        } catch {
+          // Fall back to basic auth data below.
         }
+
+        setFormData((prev) => ({
+          ...prev,
+          patientName: userData.user.name || '',
+          patientEmail: userData.user.email || '',
+          patientPhone: phone,
+          patientAddress: address,
+        }));
       }
     } catch (error) {
       // User not authenticated, but that's okay for anonymous uploads
@@ -411,6 +431,25 @@ export default function UploadPage() {
 
       if (response.ok) {
         setMessage('Prescription uploaded successfully! Selected pharmacies will be notified.');
+        if (user?.role === 'patient') {
+          try {
+            const notification = {
+              id: `patient-upload-${Date.now()}`,
+              title: 'Prescription Uploaded',
+              message: 'Your prescription was submitted and sent to selected pharmacies.',
+              createdAt: new Date().toISOString(),
+            };
+            const existingRaw = localStorage.getItem(STORAGE_PATIENT_NOTIFICATIONS_KEY);
+            const existing = existingRaw ? (JSON.parse(existingRaw) as typeof notification[]) : [];
+            const merged = [notification, ...existing].slice(0, 100);
+            localStorage.setItem(STORAGE_PATIENT_NOTIFICATIONS_KEY, JSON.stringify(merged));
+            const unreadCount = Number(localStorage.getItem(STORAGE_PATIENT_UNREAD_KEY) || '0');
+            localStorage.setItem(STORAGE_PATIENT_UNREAD_KEY, String(unreadCount + 1));
+            window.dispatchEvent(new Event('notification-updated'));
+          } catch {
+            // Do not fail successful upload if local storage writes fail.
+          }
+        }
         setFormData({
           patientName: user?.name || '',
           patientEmail: user?.email || '',
