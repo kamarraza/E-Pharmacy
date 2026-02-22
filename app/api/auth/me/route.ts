@@ -4,15 +4,22 @@ import getPharmacyModel from '@/models/Pharmacy';
 
 export async function GET(request: NextRequest) {
   try {
+    const isOptional = request.nextUrl.searchParams.get('optional') === '1';
     const token = request.cookies.get('auth-token')?.value;
 
     if (!token) {
+      if (isOptional) {
+        return NextResponse.json({ user: null });
+      }
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
     const user = await getUserFromToken(token);
 
     if (!user) {
+      if (isOptional) {
+        return NextResponse.json({ user: null });
+      }
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
@@ -29,6 +36,9 @@ export async function GET(request: NextRequest) {
       typeof safeUser.subscriptionType === 'string' ? safeUser.subscriptionType : null;
 
     if (!id || !email || !role) {
+      if (isOptional) {
+        return NextResponse.json({ user: null });
+      }
       return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
     }
 
@@ -54,6 +64,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Auth check error:', error);
+    if (request.nextUrl.searchParams.get('optional') === '1') {
+      return NextResponse.json({ user: null });
+    }
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 }

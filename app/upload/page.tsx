@@ -74,10 +74,12 @@ export default function UploadPage() {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch('/api/auth/me');
+      const response = await fetch('/api/auth/me?optional=1');
       if (!response.ok) return;
 
       const userData = await response.json();
+      if (!userData?.user) return;
+
       setUser(userData.user);
 
       // Auto-fill user information if logged in as patient.

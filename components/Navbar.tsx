@@ -110,15 +110,8 @@ export default function Navbar() {
   const [notificationPreview, setNotificationPreview] = useState<NavNotificationItem[]>([]);
   const [confirmingNotificationId, setConfirmingNotificationId] = useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const savedTheme = localStorage.getItem(STORAGE_THEME_KEY);
-      return savedTheme ? savedTheme === 'dark' : true;
-    } catch {
-      return true;
-    }
-  });
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [hasInitializedTheme, setHasInitializedTheme] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
@@ -138,6 +131,8 @@ export default function Navbar() {
         }
       } catch {
         // Ignore storage/read issues and preserve current in-memory state.
+      } finally {
+        setHasInitializedTheme(true);
       }
     };
 
@@ -151,12 +146,14 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
+    if (!hasInitializedTheme) return;
+
     const root = document.documentElement;
     const nextTheme = isDarkMode ? 'dark' : 'light';
     root.setAttribute('data-theme', nextTheme);
     localStorage.setItem(STORAGE_THEME_KEY, nextTheme);
     window.dispatchEvent(new Event('theme-updated'));
-  }, [isDarkMode]);
+  }, [hasInitializedTheme, isDarkMode]);
 
   useEffect(() => {
     if (!isMobileMenuOpen) {
@@ -311,7 +308,7 @@ export default function Navbar() {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch('/api/auth/me');
+      const response = await fetch('/api/auth/me?optional=1');
       if (response.ok) {
         const userData = await response.json();
         setUser(userData.user);
