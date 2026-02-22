@@ -14,6 +14,12 @@ const PrescriptionSchema = new mongoose.Schema({
   pharmacyStatuses: [{
     pharmacyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     status: { type: String, enum: ['pending', 'accepted', 'rejected', 'fulfilled', 'fulfillment_requested'], default: 'pending' },
+    availabilityResponse: {
+      type: String,
+      enum: ['not_available', 'same_medicine_available', 'same_salt_different_company'],
+      default: null,
+    },
+    pharmacistMessage: { type: String, default: '' },
     assignedAt: { type: Date, default: Date.now },
     completedAt: { type: Date }
   }],

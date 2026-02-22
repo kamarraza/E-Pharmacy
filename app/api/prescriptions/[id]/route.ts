@@ -19,8 +19,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json() as {
       status?: 'assigned' | 'request_fulfillment' | 'confirm_fulfillment';
       pharmacyId?: string;
+      availabilityResponse?: 'not_available' | 'same_medicine_available' | 'same_salt_different_company';
+      customMessage?: string;
     };
-    const { status, pharmacyId } = body;
+    const { status, pharmacyId, availabilityResponse, customMessage } = body;
 
     const Prescription = await getPrescriptionModel();
     const prescription = await Prescription.findById(id);
@@ -76,6 +78,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
+    if (status === 'assigned') {
+      const validAvailabilityResponses = new Set([
+        'not_available',
+        'same_medicine_available',
+        'same_salt_different_company',
+      ]);
+      if (!availabilityResponse || !validAvailabilityResponses.has(availabilityResponse)) {
+        return NextResponse.json(
+          { error: 'Select a valid medicine availability response' },
+          { status: 400 }
+        );
+      }
+      if (typeof customMessage === 'string' && customMessage.length > 500) {
+        return NextResponse.json(
+          { error: 'Custom message must be 500 characters or fewer' },
+          { status: 400 }
+        );
+      }
+    }
+
     const PharmacyModel = await getPharmacyModel();
     const pharmacy = await PharmacyModel.findOne({ pharmacistId: user._id }).select('_id');
     if (!pharmacy?._id) {
@@ -91,11 +113,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       if (status === 'assigned') {
         if (matchingStatus) {
           matchingStatus.status = 'accepted';
+          matchingStatus.availabilityResponse = availabilityResponse;
+          matchingStatus.pharmacistMessage = (customMessage || '').trim();
           matchingStatus.assignedAt = new Date();
         } else {
           prescription.pharmacyStatuses.push({
             pharmacyId: pharmacy._id,
             status: 'accepted',
+            availabilityResponse,
+            pharmacistMessage: (customMessage || '').trim(),
             assignedAt: new Date(),
           });
         }
@@ -113,6 +139,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             prescription,
           });
         }
+        const resolvedAvailability =
+          (availabilityResponse as string | undefined) ||
+          (matchingStatus?.availabilityResponse as string | undefined) ||
+          'same_medicine_available';
+        const resolvedMessage =
+          typeof customMessage === 'string'
+            ? customMessage.trim()
+            : (matchingStatus?.pharmacistMessage as string | undefined) || '';
+
         // Write fulfillment request directly to MongoDB to avoid stale in-memory enum issues.
         if (matchingStatus) {
           await Prescription.updateOne(
@@ -120,6 +155,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             {
               $set: {
                 'pharmacyStatuses.$.status': 'fulfillment_requested',
+                'pharmacyStatuses.$.availabilityResponse': resolvedAvailability,
+                'pharmacyStatuses.$.pharmacistMessage': resolvedMessage,
                 status: 'assigned',
               },
             }
@@ -132,6 +169,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 pharmacyStatuses: {
                   pharmacyId: pharmacy._id,
                   status: 'fulfillment_requested',
+                  availabilityResponse: resolvedAvailability,
+                  pharmacistMessage: resolvedMessage,
                   assignedAt: new Date(),
                 },
               },

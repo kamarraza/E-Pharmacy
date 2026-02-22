@@ -58,6 +58,8 @@ interface PatientHistoryItem {
     pharmacyId?: string;
     name?: string;
     status?: string;
+    availabilityResponse?: 'not_available' | 'same_medicine_available' | 'same_salt_different_company' | null;
+    pharmacistMessage?: string;
     assignedAt?: string | null;
     completedAt?: string | null;
   }>;
@@ -84,6 +86,20 @@ const STORAGE_PATIENT_NOTIFICATIONS_KEY = 'patient_notifications';
 const STORAGE_PATIENT_UNREAD_KEY = 'patient_notifications_unread';
 const STORAGE_THEME_KEY = 'pharmacy_theme';
 const MAX_NOTIFICATION_ITEMS = 100;
+const getAvailabilityLabel = (
+  value?: 'not_available' | 'same_medicine_available' | 'same_salt_different_company' | null
+) => {
+  switch (value) {
+    case 'not_available':
+      return 'Medicine not available';
+    case 'same_medicine_available':
+      return 'Same medicine available';
+    case 'same_salt_different_company':
+      return 'Same salt, different company available';
+    default:
+      return '';
+  }
+};
 
 export default function Navbar() {
   const [user, setUser] = useState<User | null>(null);
@@ -540,12 +556,27 @@ export default function Navbar() {
             const statusLabel = normalizedStatus.replace('_', ' ');
             const timeSource = detail?.completedAt || detail?.assignedAt || prescription.createdAt || '';
             const isFulfillmentRequest = normalizedStatus === 'fulfillment_requested';
+            const availabilityText = getAvailabilityLabel(detail?.availabilityResponse);
+            const customMessage = (detail?.pharmacistMessage || '').trim();
+            const confirmationMessage = [
+              `${detail?.name || 'Pharmacy'} requested your fulfillment confirmation.`,
+              availabilityText ? `Availability: ${availabilityText}.` : '',
+              customMessage ? `Message: ${customMessage}` : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
             mapped.push({
               id: `${prescription._id}-${detail?.pharmacyId || 'unknown'}-${normalizedStatus}`,
               title: `Prescription ${statusLabel}`,
               message: isFulfillmentRequest
-                ? `${detail?.name || 'Pharmacy'} requested your fulfillment confirmation.`
-                : `${detail?.name || 'Pharmacy'} updated your prescription status.`,
+                ? confirmationMessage
+                : [
+                    `${detail?.name || 'Pharmacy'} updated your prescription status.`,
+                    availabilityText ? `Availability: ${availabilityText}.` : '',
+                    customMessage ? `Message: ${customMessage}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' '),
               createdAt: timeSource || new Date().toISOString(),
               actionType: isFulfillmentRequest ? 'confirm_fulfillment' : undefined,
               prescriptionId: isFulfillmentRequest ? prescription._id : undefined,

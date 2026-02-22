@@ -6,6 +6,8 @@ import { getUserFromToken } from '@/lib/auth';
 type PharmacyStatusEntry = {
   pharmacyId?: unknown;
   status?: string;
+  availabilityResponse?: string | null;
+  pharmacistMessage?: string;
   assignedAt?: string | null;
   completedAt?: string | null;
 };
@@ -74,6 +76,8 @@ export async function GET(request: NextRequest) {
             address: pharmacy?.address || '',
             location: pharmacy?.location || '',
             status: entry?.status || 'pending',
+            availabilityResponse: entry?.availabilityResponse || null,
+            pharmacistMessage: entry?.pharmacistMessage || '',
             assignedAt: entry?.assignedAt || null,
             completedAt: entry?.completedAt || null,
           };
