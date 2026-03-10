@@ -272,10 +272,39 @@ export async function POST(request: NextRequest) {
       typeof error === 'object' && error !== null && 'code' in error
         ? (error as { code?: unknown }).code
         : undefined;
+    const errorMessage =
+      typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message?: unknown }).message || '')
+        : '';
+    const errorName =
+      typeof error === 'object' && error !== null && 'name' in error
+        ? String((error as { name?: unknown }).name || '')
+        : '';
 
     if (errorCode === 11000) {
       return NextResponse.json({ error: 'Email already exists' }, { status: 400 });
     }
+
+    if (errorMessage.includes('MongoDB URI is not configured')) {
+      return NextResponse.json(
+        { error: 'Server database is not configured. Contact support.' },
+        { status: 500 }
+      );
+    }
+
+    if (
+      errorName === 'MongooseServerSelectionError' ||
+      errorMessage.includes('ECONNREFUSED') ||
+      errorMessage.includes('querySrv') ||
+      errorMessage.includes('ENOTFOUND') ||
+      errorMessage.includes('authentication failed')
+    ) {
+      return NextResponse.json(
+        { error: 'Unable to connect to database. Please try again shortly.' },
+        { status: 503 }
+      );
+    }
+
     console.error('User creation error:', error);
     return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
   }
