@@ -86,7 +86,7 @@ export async function sendNotificationToPharmacists(prescription: {
       const matchedPharmacies = await PharmacyModel.find(
         { _id: { $in: selectedPharmacyIds } },
         { pharmacistId: 1 }
-      ).lean<{ pharmacistId?: { toString: () => string } }[]>();
+      ).lean() as { pharmacistId?: { toString: () => string } }[];
 
       for (const pharmacy of matchedPharmacies) {
         if (pharmacy.pharmacistId) {

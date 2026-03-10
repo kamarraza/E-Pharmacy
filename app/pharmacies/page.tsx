@@ -21,7 +21,7 @@ interface Pharmacy {
   reviewCount: number;
   operatingHours?: Record<string, unknown>;
   services?: string[];
-  source: 'platform' | 'google';
+  source?: 'platform' | 'google';
   website?: string;
 }
 

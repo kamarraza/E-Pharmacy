@@ -3,6 +3,22 @@ import getPrescriptionModel from '@/models/Prescription';
 import { getUserFromToken } from '@/lib/auth';
 import getPharmacyModel from '@/models/Pharmacy';
 
+type PharmacyStatusEntry = {
+  pharmacyId?: unknown;
+  status?: string;
+  availabilityResponse?: string;
+  pharmacistMessage?: string;
+  assignedAt?: Date;
+  completedAt?: Date;
+};
+
+type PrescriptionDocument = {
+  patientEmail?: string;
+  pharmacyStatuses: PharmacyStatusEntry[];
+  status?: string;
+  save: () => Promise<unknown>;
+};
+
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const token = request.cookies.get('auth-token')?.value;
@@ -25,7 +41,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { status, pharmacyId, availabilityResponse, customMessage } = body;
 
     const Prescription = await getPrescriptionModel();
-    const prescription = await Prescription.findById(id);
+    const prescription = (await Prescription.findById(id)) as PrescriptionDocument | null;
 
     if (!prescription) {
       return NextResponse.json({ error: 'Prescription not found' }, { status: 404 });

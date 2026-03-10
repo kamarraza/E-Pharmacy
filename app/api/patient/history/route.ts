@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const prescriptions = await Prescription.find({
       patientEmail: user.email
     }).sort({ createdAt: -1 });
-    const typedPrescriptions = prescriptions as PrescriptionRecord[];
+    const typedPrescriptions = prescriptions as unknown as PrescriptionRecord[];
 
     const pharmacyIds = Array.from(
       new Set(

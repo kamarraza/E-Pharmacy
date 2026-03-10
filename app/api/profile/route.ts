@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         const PharmacyModel = await getPharmacyModel();
         const pharmacy = await PharmacyModel.findOne({ pharmacistId: safeUser._id })
           .select('subscriptionType')
-          .lean<{ subscriptionType?: unknown } | null>();
+          .lean() as { subscriptionType?: unknown } | null;
         if (!subscriptionType) {
           subscriptionType = getSafeString(pharmacy?.subscriptionType);
         }

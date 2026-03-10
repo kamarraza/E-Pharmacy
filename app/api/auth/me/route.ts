@@ -45,7 +45,9 @@ export async function GET(request: NextRequest) {
     let pharmacyId: string | null = null;
     if (role === 'pharmacist' && id) {
       const PharmacyModel = await getPharmacyModel();
-      const pharmacy = await PharmacyModel.findOne({ pharmacistId: id }).select('_id').lean<{ _id: unknown } | null>();
+      const pharmacy = (await PharmacyModel.findOne({ pharmacistId: id }).select('_id').lean()) as {
+        _id?: unknown;
+      } | null;
       if (pharmacy?._id) {
         pharmacyId = String(pharmacy._id);
       }

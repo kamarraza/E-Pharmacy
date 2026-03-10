@@ -210,7 +210,7 @@ export default function RegisterPage() {
       }
 
       try {
-        setOptions({ apiKey, version: 'weekly' });
+        setOptions({ key: apiKey, v: 'weekly' });
         await importLibrary('maps');
 
         const map = new google.maps.Map(mapRef.current as HTMLDivElement, {

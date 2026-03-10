@@ -39,7 +39,16 @@ export async function POST(request: NextRequest) {
 
     // Send real-time notification to selected pharmacists
     try {
-      await sendNotificationToPharmacists(prescription);
+      await sendNotificationToPharmacists({
+        _id: String((prescription as { _id?: unknown })._id || ''),
+        patientName: String(patientName || ''),
+        location: String(location || ''),
+        createdAt: new Date(),
+        status: 'assigned',
+        pharmacistIds: Array.isArray(selectedPharmacyIds)
+          ? selectedPharmacyIds.map((id: unknown) => String(id))
+          : [],
+      });
     } catch (error) {
       console.error('Failed to send notification:', error);
       // Don't fail the upload if notification fails

@@ -28,14 +28,18 @@ const PrescriptionSchema = new mongoose.Schema({
 });
 
 // Create and export the Prescription model for main database
-let Prescription: mongoose.Model<unknown> | null = null;
+let Prescription: mongoose.Model<unknown> | undefined;
 
-const getPrescriptionModel = async () => {
+const getPrescriptionModel = async (): Promise<mongoose.Model<unknown>> => {
   if (Prescription) return Prescription;
 
   try {
     const mainConn = await dbConnectMain();
-    Prescription = mainConn.models.Prescription || mainConn.model('Prescription', PrescriptionSchema);
+    const existingModel = mainConn.models.Prescription as mongoose.Model<unknown> | undefined;
+    Prescription = existingModel ?? mainConn.model('Prescription', PrescriptionSchema);
+    if (!Prescription) {
+      throw new Error('Failed to initialize Prescription model');
+    }
     return Prescription;
   } catch (error) {
     console.error('Error creating Prescription model:', error);
