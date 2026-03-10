@@ -6,6 +6,8 @@ import { getUserFromToken } from '@/lib/auth';
 type PharmacyStatusEntry = {
   pharmacyId?: unknown;
   status?: string;
+  availabilityResponse?: string | null;
+  pharmacistMessage?: string;
   assignedAt?: string | null;
   completedAt?: string | null;
 };
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
     const prescriptions = await Prescription.find({
       patientEmail: user.email
     }).sort({ createdAt: -1 });
-    const typedPrescriptions = prescriptions as PrescriptionRecord[];
+    const typedPrescriptions = prescriptions as unknown as PrescriptionRecord[];
 
     const pharmacyIds = Array.from(
       new Set(
@@ -74,6 +76,8 @@ export async function GET(request: NextRequest) {
             address: pharmacy?.address || '',
             location: pharmacy?.location || '',
             status: entry?.status || 'pending',
+            availabilityResponse: entry?.availabilityResponse || null,
+            pharmacistMessage: entry?.pharmacistMessage || '',
             assignedAt: entry?.assignedAt || null,
             completedAt: entry?.completedAt || null,
           };

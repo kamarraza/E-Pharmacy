@@ -14,6 +14,12 @@ const PrescriptionSchema = new mongoose.Schema({
   pharmacyStatuses: [{
     pharmacyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     status: { type: String, enum: ['pending', 'accepted', 'rejected', 'fulfilled', 'fulfillment_requested'], default: 'pending' },
+    availabilityResponse: {
+      type: String,
+      enum: ['not_available', 'same_medicine_available', 'same_salt_different_company'],
+      default: null,
+    },
+    pharmacistMessage: { type: String, default: '' },
     assignedAt: { type: Date, default: Date.now },
     completedAt: { type: Date }
   }],
@@ -22,14 +28,18 @@ const PrescriptionSchema = new mongoose.Schema({
 });
 
 // Create and export the Prescription model for main database
-let Prescription: mongoose.Model<unknown> | null = null;
+let Prescription: mongoose.Model<unknown> | undefined;
 
-const getPrescriptionModel = async () => {
+const getPrescriptionModel = async (): Promise<mongoose.Model<unknown>> => {
   if (Prescription) return Prescription;
 
   try {
     const mainConn = await dbConnectMain();
-    Prescription = mainConn.models.Prescription || mainConn.model('Prescription', PrescriptionSchema);
+    const existingModel = mainConn.models.Prescription as mongoose.Model<unknown> | undefined;
+    Prescription = existingModel ?? mainConn.model('Prescription', PrescriptionSchema);
+    if (!Prescription) {
+      throw new Error('Failed to initialize Prescription model');
+    }
     return Prescription;
   } catch (error) {
     console.error('Error creating Prescription model:', error);

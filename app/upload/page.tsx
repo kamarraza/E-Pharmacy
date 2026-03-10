@@ -32,6 +32,9 @@ interface User {
   role: string;
 }
 
+const STORAGE_PATIENT_NOTIFICATIONS_KEY = 'patient_notifications';
+const STORAGE_PATIENT_UNREAD_KEY = 'patient_notifications_unread';
+
 export default function UploadPage() {
   const [user, setUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
@@ -71,19 +74,38 @@ export default function UploadPage() {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch('/api/auth/me');
-      if (response.ok) {
-        const userData = await response.json();
-        setUser(userData.user);
-        // Auto-fill user information if logged in
-        if (userData.user.role === 'patient') {
-          // Note: In a real app, you'd fetch additional patient details
-          setFormData(prev => ({
-            ...prev,
-            patientName: userData.user.name,
-            patientEmail: userData.user.email,
-          }));
+      const response = await fetch('/api/auth/me?optional=1');
+      if (!response.ok) return;
+
+      const userData = await response.json();
+      if (!userData?.user) return;
+
+      setUser(userData.user);
+
+      // Auto-fill user information if logged in as patient.
+      if (userData.user.role === 'patient') {
+        let phone = '';
+        let address = '';
+
+        // Prefer richer profile data when available.
+        try {
+          const profileResponse = await fetch('/api/profile');
+          if (profileResponse.ok) {
+            const profileData = await profileResponse.json();
+            phone = profileData?.profile?.phone || '';
+            address = profileData?.profile?.address || '';
+          }
+        } catch {
+          // Fall back to basic auth data below.
         }
+
+        setFormData((prev) => ({
+          ...prev,
+          patientName: userData.user.name || '',
+          patientEmail: userData.user.email || '',
+          patientPhone: phone,
+          patientAddress: address,
+        }));
       }
     } catch (error) {
       // User not authenticated, but that's okay for anonymous uploads
@@ -411,6 +433,25 @@ export default function UploadPage() {
 
       if (response.ok) {
         setMessage('Prescription uploaded successfully! Selected pharmacies will be notified.');
+        if (user?.role === 'patient') {
+          try {
+            const notification = {
+              id: `patient-upload-${Date.now()}`,
+              title: 'Prescription Uploaded',
+              message: 'Your prescription was submitted and sent to selected pharmacies.',
+              createdAt: new Date().toISOString(),
+            };
+            const existingRaw = localStorage.getItem(STORAGE_PATIENT_NOTIFICATIONS_KEY);
+            const existing = existingRaw ? (JSON.parse(existingRaw) as typeof notification[]) : [];
+            const merged = [notification, ...existing].slice(0, 100);
+            localStorage.setItem(STORAGE_PATIENT_NOTIFICATIONS_KEY, JSON.stringify(merged));
+            const unreadCount = Number(localStorage.getItem(STORAGE_PATIENT_UNREAD_KEY) || '0');
+            localStorage.setItem(STORAGE_PATIENT_UNREAD_KEY, String(unreadCount + 1));
+            window.dispatchEvent(new Event('notification-updated'));
+          } catch {
+            // Do not fail successful upload if local storage writes fail.
+          }
+        }
         setFormData({
           patientName: user?.name || '',
           patientEmail: user?.email || '',
@@ -440,9 +481,9 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-white/10">
+    <div className="min-h-screen px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl">
+        <div className="glass-panel overflow-hidden rounded-3xl border border-white/10 shadow-2xl">
           <div className="bg-slate-900 px-6 py-6">
             <h1 className="text-3xl font-bold text-white text-center">Upload Prescription</h1>
             <p className="text-slate-300 text-center mt-2">Securely upload your prescription for pharmacy fulfillment</p>
@@ -450,13 +491,13 @@ export default function UploadPage() {
 
           <div className="p-8">
             {!user && (
-              <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4 mb-6">
+              <div className="mb-6 rounded-lg border border-cyan-300/30 bg-cyan-300/10 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-medium text-cyan-800">Already have an account?</h3>
-                    <p className="text-sm text-cyan-700 mt-1">Login to auto-fill your information and track your prescriptions.</p>
+                    <h3 className="text-sm font-medium text-cyan-100">Already have an account?</h3>
+                    <p className="mt-1 text-sm text-cyan-200">Login to auto-fill your information and track your prescriptions.</p>
                   </div>
-                  <Link href="/login" className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition duration-300">
+                  <Link href="/login" className="rounded-lg bg-cyan-300 px-4 py-2 text-sm font-medium text-slate-900 transition duration-300 hover:bg-cyan-200">
                     Login
                   </Link>
                 </div>
@@ -465,8 +506,8 @@ export default function UploadPage() {
 
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Patient Information Section */}
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6">
+                <h2 className="mb-4 flex items-center text-xl font-semibold text-slate-100">
                   <svg className="h-6 w-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
@@ -475,45 +516,45 @@ export default function UploadPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Full Name *</label>
                     <input
                       type="text"
                       name="patientName"
                       value={formData.patientName}
                       onChange={handleChange}
                       required
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
                       placeholder="Enter your full name"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address *</label>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Email Address *</label>
                     <input
                       type="email"
                       name="patientEmail"
                       value={formData.patientEmail}
                       onChange={handleChange}
                       required
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
                       placeholder="Enter your email"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Phone Number</label>
                     <input
                       type="tel"
                       name="patientPhone"
                       value={formData.patientPhone}
                       onChange={handleChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
                       placeholder="Enter your phone number"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Location (City/ZIP) *</label>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Location (City/ZIP) *</label>
                     <div className="flex space-x-2">
                       <input
                         type="text"
@@ -521,22 +562,35 @@ export default function UploadPage() {
                         value={formData.location}
                         onChange={handleLocationChange}
                         required
-                        className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                        className="flex-1 rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
                         placeholder="Enter your city or ZIP code"
                       />
                       <button
                         type="button"
                         onClick={() => formData.location.trim() && searchPharmacies({ location: formData.location })}
                         disabled={!formData.location.trim() || isSearchingPharmacies}
-                        className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded-lg bg-blue-600 px-4 py-3 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
+                        aria-label="Search pharmacies"
                       >
-                        {isSearchingPharmacies ? '🔍' : 'Search'}
+                        <svg
+                          className={`h-5 w-5 ${isSearchingPharmacies ? 'animate-pulse' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="m21 21-4.35-4.35m0 0A7.5 7.5 0 1 0 6.04 6.04a7.5 7.5 0 0 0 10.61 10.61Z"
+                          />
+                        </svg>
                       </button>
                       <button
                         type="button"
                         onClick={getCurrentLocationAndNearestPharmacies}
                         disabled={isSearchingPharmacies}
-                        className="px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded-lg bg-emerald-600 px-4 py-3 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
                       >
                         Nearest
                       </button>
@@ -545,12 +599,12 @@ export default function UploadPage() {
                 </div>
 
                 <div className="mt-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Address</label>
                   <textarea
                     name="patientAddress"
                     value={formData.patientAddress}
                     onChange={handleChange}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
                     rows={3}
                     placeholder="Enter your complete address"
                   />
@@ -558,8 +612,8 @@ export default function UploadPage() {
               </div>
 
               {/* Prescription Upload Section */}
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6">
+                <h2 className="mb-4 flex items-center text-xl font-semibold text-slate-100">
                   <svg className="h-6 w-6 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -570,8 +624,8 @@ export default function UploadPage() {
                 <div
                   className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                     dragActive
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 hover:border-gray-400'
+                      ? 'border-cyan-300 bg-cyan-300/10'
+                      : 'border-slate-600 hover:border-slate-400'
                   }`}
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
@@ -579,13 +633,13 @@ export default function UploadPage() {
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                  <svg className="mx-auto mb-4 h-12 w-12 text-slate-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                     <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  <p className="text-lg font-medium text-gray-900 mb-2">
+                  <p className="mb-2 text-lg font-medium text-slate-100">
                     {dragActive ? 'Drop your prescription images here' : 'Click to upload or drag and drop'}
                   </p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-slate-400">
                     PNG, JPG, GIF, WebP up to 5MB each
                   </p>
                   <input
@@ -601,7 +655,7 @@ export default function UploadPage() {
                 {/* Image Previews */}
                 {previews.length > 0 && (
                   <div className="mt-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Uploaded Images ({previews.length})</h3>
+                    <h3 className="mb-4 text-lg font-medium text-slate-100">Uploaded Images ({previews.length})</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                       {previews.map((preview, index) => (
                         <div key={index} className="relative group">
@@ -627,12 +681,12 @@ export default function UploadPage() {
 
                 {/* Additional Notes */}
                 <div className="mt-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Additional Notes (Optional)</label>
                   <textarea
                     name="notes"
                     value={formData.notes}
                     onChange={handleChange}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
                     rows={3}
                     placeholder="Any special instructions or notes for the pharmacy"
                   />
@@ -640,8 +694,8 @@ export default function UploadPage() {
               </div>
 
               {/* Pharmacy Selection Section */}
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6">
+                <h2 className="mb-4 flex items-center text-xl font-semibold text-slate-100">
                   <svg className="h-6 w-6 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                   </svg>
@@ -650,7 +704,7 @@ export default function UploadPage() {
 
                 {formData.location && (
                   <div className="mb-4">
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-slate-300">
                       {isSearchingPharmacies ? (
                         <>🔍 Searching pharmacies...</>
                       ) : formData.location.trim().length < 3 ? (
@@ -669,7 +723,7 @@ export default function UploadPage() {
 
                 {!formData.location && (
                   <div className="mb-4">
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-slate-300">
                       Showing registered pharmacies from our platform. You can still type a city/ZIP or use Nearest.
                     </p>
                   </div>
@@ -681,7 +735,7 @@ export default function UploadPage() {
                       <button
                         type="button"
                         onClick={toggleSelectAllPharmacies}
-                        className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                        className="text-sm font-medium text-cyan-200 hover:text-cyan-100"
                       >
                         {availablePharmacies.every((pharmacy) => selectedPharmacyIds.includes(pharmacy._id))
                           ? 'Clear all'
@@ -695,10 +749,10 @@ export default function UploadPage() {
                             key={pharmacy._id}
                             className={`border rounded-lg p-4 cursor-pointer transition-colors ${
                               selectedPharmacyIds.includes(pharmacy._id)
-                                ? 'border-blue-500 bg-blue-50'
+                                ? 'border-cyan-300 bg-cyan-300/10'
                                 : activePharmacyId === pharmacy._id
-                                  ? 'border-indigo-400 bg-indigo-50'
-                                  : 'border-gray-200 hover:border-gray-300'
+                                  ? 'border-indigo-400 bg-indigo-300/10'
+                                  : 'border-slate-700 hover:border-slate-500'
                             }`}
                             onClick={() => togglePharmacySelection(pharmacy._id)}
                           >
@@ -710,11 +764,11 @@ export default function UploadPage() {
                                     checked={selectedPharmacyIds.includes(pharmacy._id)}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={() => togglePharmacySelection(pharmacy._id)}
-                                    className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                    className="mr-3 h-4 w-4 rounded border-slate-600 bg-slate-950 text-cyan-300 focus:ring-cyan-300"
                                   />
-                                  <h3 className="font-medium text-gray-900">{pharmacy.name}</h3>
+                                  <h3 className="font-medium text-slate-100">{pharmacy.name}</h3>
                                 </div>
-                                <p className="text-sm text-gray-600 mt-1">{pharmacy.address}</p>
+                                <p className="mt-1 text-sm text-slate-300">{pharmacy.address}</p>
                                 {typeof pharmacy.distanceKm === 'number' && (
                                   <p className="text-xs text-emerald-700 mt-1">
                                     Approx. {pharmacy.distanceKm.toFixed(1)} km away
@@ -722,23 +776,23 @@ export default function UploadPage() {
                                 )}
                                 <div className="flex items-center mt-2 space-x-2">
                                 {pharmacy.isUsingService && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  <span className="inline-flex items-center rounded-full bg-emerald-300/20 px-2 py-1 text-xs font-medium text-emerald-100">
                                     ★ Service Partner
                                   </span>
                                 )}
                                 {!pharmacy.isUsingService && !pharmacy.subscriptionType && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                  <span className="inline-flex items-center rounded-full bg-slate-700/70 px-2 py-1 text-xs font-medium text-slate-200">
                                     Registered Pharmacy
                                   </span>
                                 )}
                                 {pharmacy.supportsPrescriptionUpload && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  <span className="inline-flex items-center rounded-full bg-cyan-300/20 px-2 py-1 text-xs font-medium text-cyan-100">
                                     📄 Upload Support
                                   </span>
                                 )}
                                   <div className="flex items-center">
                                     <span className="text-yellow-400 text-sm">★</span>
-                                    <span className="text-xs text-gray-600 ml-1">
+                                    <span className="ml-1 text-xs text-slate-300">
                                       {pharmacy.rating} ({pharmacy.reviewCount} reviews)
                                     </span>
                                   </div>
@@ -748,7 +802,7 @@ export default function UploadPage() {
                           </div>
                         ))}
                       </div>
-                      <div className="min-h-[20rem] rounded-lg border border-gray-200 bg-white p-2">
+                      <div className="min-h-[20rem] rounded-lg border border-white/10 bg-slate-950/80 p-2">
                         <PharmacyMap
                           pharmacies={availablePharmacies}
                           userLocation={userCoordinates || undefined}
@@ -762,8 +816,8 @@ export default function UploadPage() {
                 )}
 
                 {(formData.location || userCoordinates) && !isSearchingPharmacies && availablePharmacies.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="py-8 text-center text-slate-400">
+                    <svg className="mx-auto mb-4 h-12 w-12 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                     </svg>
                     <p>No pharmacies found in this area.</p>
@@ -772,17 +826,17 @@ export default function UploadPage() {
                 )}
 
                 {!formData.location && availablePharmacies.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="py-8 text-center text-slate-400">
                     <p>No registered pharmacies available right now.</p>
                   </div>
                 )}
 
                 {selectedPharmacyIds.length > 0 && (
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800">
+                  <div className="mt-4 rounded-lg border border-cyan-300/30 bg-cyan-300/10 p-3">
+                    <p className="text-sm text-cyan-100">
                       <strong>{selectedPharmacyIds.length} pharmacy(ies) selected</strong> - Your prescription will be sent to these pharmacies.
                     </p>
-                    <div className="mt-2 text-xs text-blue-700">
+                    <div className="mt-2 text-xs text-cyan-200">
                       Active details: {availablePharmacies.find((pharmacy) => pharmacy._id === (activePharmacyId || selectedPharmacyIds[0]))?.name || 'Select a pharmacy from the list'}
                     </div>
                   </div>
@@ -791,14 +845,14 @@ export default function UploadPage() {
 
               {/* Progress Bar */}
               {isLoading && (
-                <div className="bg-gray-50 rounded-lg p-6">
+                <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700">Uploading...</span>
-                    <span className="text-sm font-medium text-gray-700">{uploadProgress}%</span>
+                    <span className="text-sm font-medium text-slate-300">Uploading...</span>
+                    <span className="text-sm font-medium text-slate-300">{uploadProgress}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="h-2 w-full rounded-full bg-slate-700">
                     <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      className="h-2 rounded-full bg-cyan-300 transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     ></div>
                   </div>
@@ -809,7 +863,7 @@ export default function UploadPage() {
               <button
                 type="submit"
                 disabled={isLoading || formData.prescriptionImages.length === 0 || selectedPharmacyIds.length === 0}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white p-4 rounded-lg hover:from-blue-600 hover:to-purple-600 transition duration-300 font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-cyan-400 to-emerald-400 p-4 text-lg font-semibold text-slate-900 transition duration-300 hover:from-cyan-300 hover:to-emerald-300 disabled:cursor-not-allowed disabled:from-slate-500 disabled:to-slate-500 disabled:text-slate-200"
               >
                 {isLoading ? (
                   <>
@@ -834,8 +888,8 @@ export default function UploadPage() {
             {message && (
               <div className={`mt-6 p-4 rounded-lg ${
                 message.includes('successfully')
-                  ? 'bg-green-50 border border-green-200 text-green-800'
-                  : 'bg-red-50 border border-red-200 text-red-800'
+                  ? 'border border-emerald-300/30 bg-emerald-300/10 text-emerald-100'
+                  : 'border border-rose-300/30 bg-rose-300/10 text-rose-100'
               }`}>
                 <div className="flex items-center">
                   {message.includes('successfully') ? (
@@ -853,9 +907,9 @@ export default function UploadPage() {
             )}
 
             {/* Help Text */}
-            <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-blue-800 mb-2">Need Help?</h3>
-              <ul className="text-sm text-blue-700 space-y-1">
+            <div className="mt-8 rounded-lg border border-cyan-300/30 bg-cyan-300/10 p-4">
+              <h3 className="mb-2 text-sm font-medium text-cyan-100">Need Help?</h3>
+              <ul className="space-y-1 text-sm text-cyan-200">
                 <li>• Ensure your prescription is clearly visible and readable</li>
                 <li>• Include all pages of your prescription</li>
                 <li>• Make sure the image is well-lit and in focus</li>

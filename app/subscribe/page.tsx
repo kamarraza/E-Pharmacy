@@ -1,8 +1,21 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useEffect } from 'react';
+
+interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
 
 export default function SubscribePage() {
+  const router = useRouter();
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -14,6 +27,26 @@ export default function SubscribePage() {
   });
   const [message, setMessage] = useState('');
   const [selectedPlan, setSelectedPlan] = useState('');
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/auth/me');
+        if (!response.ok) {
+          setAuthUser(null);
+          return;
+        }
+        const data = await response.json();
+        setAuthUser(data?.user || null);
+      } catch {
+        setAuthUser(null);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   const plans = [
     {
@@ -44,12 +77,48 @@ export default function SubscribePage() {
   };
 
   const handlePlanSelect = (planId: string) => {
+    const plan = plans.find((item) => item.id === planId);
+    const planName = plan?.name || 'this plan';
+    const shouldProceed = window.confirm(
+      `You selected ${planName}. Do you want to continue and join this plan?`
+    );
+
+    if (!shouldProceed) {
+      setMessage('Plan selection cancelled.');
+      return;
+    }
+
+    setMessage('Payment gateway will be integrated soon.');
     setSelectedPlan(planId);
     setFormData({ ...formData, subscriptionType: planId });
   };
 
+  const activateLoggedInPharmacistPlan = async () => {
+    if (!authUser || authUser.role !== 'pharmacist' || !selectedPlan) return;
+    try {
+      const response = await fetch('/api/subscription/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: selectedPlan }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload?.error || 'Failed to activate plan.');
+        return;
+      }
+      const selectedPlanName = plans.find((plan) => plan.id === selectedPlan)?.name || 'selected plan';
+      setMessage(`${selectedPlanName} activated successfully. You can view it in Profile Details.`);
+    } catch {
+      setMessage('Failed to activate plan.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (authUser) {
+      setMessage('Please logout to create a new pharmacist subscription account.');
+      return;
+    }
     if (!selectedPlan) {
       setMessage('Please select a subscription plan.');
       return;
@@ -130,7 +199,7 @@ export default function SubscribePage() {
           ))}
         </div>
 
-        {selectedPlan && (
+        {!isCheckingAuth && !authUser && selectedPlan && (
           <div className="mx-auto mt-10 max-w-2xl rounded-3xl border border-white/10 bg-slate-900/85 p-8 shadow-2xl">
             <h2 className="text-2xl font-bold text-white">Complete Your Subscription</h2>
             <p className="mt-2 text-slate-300">
@@ -214,6 +283,46 @@ export default function SubscribePage() {
             {message && (
               <p className="mt-4 rounded-xl bg-white/10 px-4 py-3 text-center text-sm text-slate-100">{message}</p>
             )}
+          </div>
+        )}
+
+        {!isCheckingAuth && authUser?.role === 'pharmacist' && selectedPlan && (
+          <div className="mx-auto mt-10 max-w-2xl rounded-3xl border border-white/10 bg-slate-900/85 p-8 shadow-2xl">
+            <h2 className="text-2xl font-bold text-white">You are already logged in</h2>
+            <p className="mt-2 text-slate-300">
+              Payment flow is pending integration. For now, you can directly activate the selected plan.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={activateLoggedInPharmacistPlan}
+                className="rounded-xl bg-cyan-300 px-4 py-2 font-semibold text-slate-900 transition hover:bg-cyan-200"
+              >
+                Activate {plans.find((plan) => plan.id === selectedPlan)?.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard')}
+                className="rounded-xl border border-white/20 px-4 py-2 font-semibold text-slate-100 transition hover:bg-white/10"
+              >
+                Go to Dashboard
+              </button>
+              <Link
+                href="/pharmacies"
+                className="rounded-xl border border-white/20 px-4 py-2 font-semibold text-slate-100 transition hover:bg-white/10"
+              >
+                Browse Pharmacies
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {!isCheckingAuth && authUser?.role === 'patient' && selectedPlan && (
+          <div className="mx-auto mt-10 max-w-2xl rounded-3xl border border-white/10 bg-slate-900/85 p-8 shadow-2xl">
+            <h2 className="text-2xl font-bold text-white">Pharmacist-only signup</h2>
+            <p className="mt-2 text-slate-300">
+              Complete subscription is for pharmacist account registration. Logout first to create a pharmacist account.
+            </p>
           </div>
         )}
       </div>

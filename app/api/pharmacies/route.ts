@@ -3,6 +3,12 @@ import mongoose from 'mongoose';
 import getPharmacyModel from '@/models/Pharmacy';
 import getPharmacistUserModel from '@/models/PharmacistUser';
 
+const capitalizeFirstCharacter = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -81,7 +87,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid lat/lng/radius' }, { status: 400 });
       }
 
-      const allPharmacies = await PharmacyModel.find({}).lean<PharmacyResult[]>();
+      const allPharmacies = (await PharmacyModel.find({}).lean()) as PharmacyResult[];
 
       const withDistance = allPharmacies
         .map((pharmacy) => {
@@ -124,23 +130,25 @@ export async function GET(request: NextRequest) {
           { address: { $regex: query, $options: 'i' } },
           { location: { $regex: query, $options: 'i' } }
         ]
-      }).lean<PharmacyResult[]>();
+      }).lean() as PharmacyResult[];
       pharmacies = sortPharmacies(pharmacies);
     } else if (location) {
       // Location-based search for upload page
       pharmacies = await PharmacyModel.find({
         location: { $regex: location, $options: 'i' }
-      }).lean<PharmacyResult[]>();
+      }).lean() as PharmacyResult[];
       pharmacies = sortPharmacies(pharmacies);
     } else {
       // Return all pharmacies sorted by service usage and rating
-      pharmacies = await PharmacyModel.find({}).lean<PharmacyResult[]>();
+      pharmacies = (await PharmacyModel.find({}).lean()) as PharmacyResult[];
       pharmacies = sortPharmacies(pharmacies);
     }
 
     // Filter pharmacies to only include those with valid pharmacist accounts
     const PharmacistUserModel = await getPharmacistUserModel();
-    const validPharmacistIds = await PharmacistUserModel.find({}, '_id').lean<{ _id: mongoose.Types.ObjectId }[]>();
+    const validPharmacistIds = (await PharmacistUserModel.find({}, '_id').lean()) as {
+      _id: mongoose.Types.ObjectId;
+    }[];
     const validPharmacistIdSet = new Set(validPharmacistIds.map((p: { _id: mongoose.Types.ObjectId }) => p._id.toString()));
 
     const hasLinkedPharmacists = validPharmacistIdSet.size > 0;
@@ -168,7 +176,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const pharmacyData = await request.json();
+    const pharmacyData = (await request.json()) as Record<string, unknown>;
+    if (typeof pharmacyData.name === 'string') {
+      pharmacyData.name = capitalizeFirstCharacter(pharmacyData.name);
+    }
     const PharmacyModel = await getPharmacyModel();
 
     const pharmacy = new PharmacyModel(pharmacyData);

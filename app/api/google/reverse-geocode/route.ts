@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 type GeocodeResult = {
+  formatted_address?: string;
   address_components?: Array<{
     long_name?: string;
     short_name?: string;
@@ -59,11 +60,17 @@ export async function GET(request: NextRequest) {
     );
 
     const city = cityComponent?.long_name || '';
+    const formattedAddress =
+      typeof payload.results[0] === 'object' &&
+      payload.results[0] &&
+      'formatted_address' in payload.results[0]
+        ? String((payload.results[0] as { formatted_address?: unknown }).formatted_address || '')
+        : '';
     if (!city) {
       return NextResponse.json({ error: 'City was not found in geocode response' }, { status: 404 });
     }
 
-    return NextResponse.json({ city });
+    return NextResponse.json({ city, formattedAddress });
   } catch (error) {
     console.error('Reverse geocode error:', error);
     return NextResponse.json({ error: 'Failed to reverse geocode location' }, { status: 500 });

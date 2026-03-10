@@ -66,6 +66,50 @@ const faqItems = [
   },
 ];
 
+const plans = [
+  {
+    id: "monthly",
+    name: "Monthly Plan",
+    price: "₹299/month",
+    features: [
+      "Access to prescriptions",
+      "Basic dashboard",
+      "Email support",
+    ],
+    ctaLabel: "Select Plan",
+    href: "/subscribe",
+    popular: false,
+  },
+  {
+    id: "yearly",
+    name: "Yearly Plan",
+    price: "₹999/year",
+    features: [
+      "All monthly features",
+      "Priority matching",
+      "Phone support",
+      "Save 20%",
+    ],
+    ctaLabel: "Select Plan",
+    href: "/subscribe",
+    popular: true,
+  },
+  {
+    id: "premium",
+    name: "Premium Plan",
+    price: "₹2999/year",
+    features: [
+      "All yearly features",
+      "Advanced analytics",
+      "Dedicated account manager",
+      "Custom integrations",
+    ],
+    ctaLabel: "Select Plan",
+    href: "/subscribe",
+    popular: false,
+  },
+];
+
 export default function HomePage() {
   return (
     <div className="relative overflow-hidden bg-slate-950 text-slate-100">
@@ -271,6 +315,62 @@ export default function HomePage() {
               >
                 <h3 className="text-lg font-semibold text-white">{item.question}</h3>
                 <p className="mt-2 text-slate-300">{item.answer}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="mb-16">
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200">
+                Plans
+              </p>
+              <h2 className="mt-2 text-3xl font-bold text-white sm:text-4xl">
+                Pharmacy subscription tiers
+              </h2>
+            </div>
+            <Link
+              href="/subscribe"
+              className="rounded-full border border-white/20 px-5 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              Compare all plans
+            </Link>
+          </div>
+          <div className="grid gap-5 lg:grid-cols-3">
+            {plans.map((plan) => (
+              <article
+                key={plan.name}
+                className={`rounded-2xl border p-6 ${
+                  plan.popular
+                    ? "border-cyan-200/40 bg-cyan-300/10"
+                    : "border-white/10 bg-white/[0.04]"
+                }`}
+              >
+                {plan.popular && (
+                  <p className="mb-4 inline-flex rounded-full bg-emerald-300/20 px-3 py-1 text-xs font-semibold text-emerald-100">
+                    Most Popular
+                  </p>
+                )}
+                <p className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-200">
+                  {plan.name}
+                </p>
+                <p className="mt-3 text-4xl font-bold text-cyan-200">{plan.price}</p>
+                <ul className="mt-5 space-y-2 text-sm text-slate-200">
+                  {plan.features.map((feature) => (
+                    <li key={feature}>• {feature}</li>
+                  ))}
+                </ul>
+                <Link
+                  href={plan.href}
+                  className={`mt-6 inline-block rounded-full px-5 py-2 text-sm font-semibold transition ${
+                    plan.popular
+                      ? "bg-cyan-300 text-slate-900 hover:bg-cyan-200"
+                      : "border border-white/20 text-white hover:bg-white/10"
+                  }`}
+                >
+                  {plan.ctaLabel}
+                </Link>
               </article>
             ))}
           </div>

@@ -83,8 +83,8 @@ export default function PharmacyMap({
 
       try {
         setOptions({
-          apiKey,
-          version: 'weekly',
+          key: apiKey,
+          v: 'weekly',
         });
         await importLibrary('maps');
 

@@ -21,9 +21,25 @@ interface Prescription {
 interface PharmacyStatus {
   pharmacyId?: string;
   status: 'pending' | 'accepted' | 'rejected' | 'fulfilled' | 'fulfillment_requested';
+  availabilityResponse?: 'not_available' | 'same_medicine_available' | 'same_salt_different_company' | null;
+  pharmacistMessage?: string;
   assignedAt?: string;
   completedAt?: string;
 }
+
+const STORAGE_NOTIFICATIONS_KEY = 'pharmacy_notifications';
+const STORAGE_UNREAD_KEY = 'pharmacy_notifications_unread';
+const AVAILABILITY_OPTIONS = [
+  { value: 'not_available', label: 'Medicine not available' },
+  { value: 'same_medicine_available', label: 'Same medicine available' },
+  { value: 'same_salt_different_company', label: 'Same salt, different company available' },
+] as const;
+type AvailabilityOptionValue = typeof AVAILABILITY_OPTIONS[number]['value'];
+const AVAILABILITY_LABELS: Record<AvailabilityOptionValue, string> = {
+  not_available: 'Medicine not available',
+  same_medicine_available: 'Same medicine available',
+  same_salt_different_company: 'Same salt, different company available',
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -31,6 +47,10 @@ export default function DashboardPage() {
   const [location, setLocation] = useState('');
   const [pharmacyId, setPharmacyId] = useState('');
   const [message, setMessage] = useState('');
+  const [acceptingPrescription, setAcceptingPrescription] = useState<Prescription | null>(null);
+  const [availabilityResponse, setAvailabilityResponse] = useState<AvailabilityOptionValue>('same_medicine_available');
+  const [customMessage, setCustomMessage] = useState('');
+  const [isSubmittingAccept, setIsSubmittingAccept] = useState(false);
 
   const fetchPrescriptions = useCallback(async (targetLocation: string) => {
     if (!targetLocation.trim()) {
@@ -79,26 +99,84 @@ export default function DashboardPage() {
     fetchPrescriptions(location);
   }, [fetchPrescriptions, location]);
 
-  const updatePrescriptionStatus = async (id: string, status: 'assigned' | 'request_fulfillment') => {
+  const updatePrescriptionStatus = async (
+    id: string,
+    status: 'assigned' | 'request_fulfillment',
+    options?: { availabilityResponse?: AvailabilityOptionValue; customMessage?: string }
+  ) => {
     try {
       const response = await fetch(`/api/prescriptions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          availabilityResponse: options?.availabilityResponse,
+          customMessage: options?.customMessage,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (response.ok) {
+        const targetPrescription = prescriptions.find((item) => item._id === id);
+        if (targetPrescription) {
+          try {
+            const nextStatus = status === 'request_fulfillment' ? 'fulfillment_requested' : 'accepted';
+            const notification = {
+              prescription: {
+                id: targetPrescription._id,
+                patientName: targetPrescription.patientName,
+                location: targetPrescription.location,
+                createdAt: new Date().toISOString(),
+                status: nextStatus,
+              },
+            };
+            const raw = localStorage.getItem(STORAGE_NOTIFICATIONS_KEY);
+            const existing = raw ? (JSON.parse(raw) as typeof notification[]) : [];
+            const merged = [notification, ...existing].slice(0, 100);
+            localStorage.setItem(STORAGE_NOTIFICATIONS_KEY, JSON.stringify(merged));
+            const unreadCount = Number(localStorage.getItem(STORAGE_UNREAD_KEY) || '0');
+            localStorage.setItem(STORAGE_UNREAD_KEY, String(unreadCount + 1));
+            window.dispatchEvent(new Event('notification-updated'));
+          } catch {
+            // Do not block status update flow if local notifications fail.
+          }
+        }
         setMessage(
           status === 'request_fulfillment'
             ? 'Patient confirmation requested for fulfillment.'
-            : 'Prescription accepted successfully.'
+            : `Prescription accepted: ${AVAILABILITY_LABELS[(options?.availabilityResponse || 'same_medicine_available') as AvailabilityOptionValue]}`
         );
         fetchPrescriptions(location);
+        return true;
       } else {
         setMessage(payload?.error || 'Failed to update prescription.');
       }
     } catch {
       setMessage('Error updating prescription.');
+    }
+    return false;
+  };
+
+  const openAcceptModal = (prescription: Prescription) => {
+    setAvailabilityResponse('same_medicine_available');
+    setCustomMessage('');
+    setAcceptingPrescription(prescription);
+  };
+
+  const closeAcceptModal = () => {
+    if (isSubmittingAccept) return;
+    setAcceptingPrescription(null);
+  };
+
+  const submitAcceptDecision = async () => {
+    if (!acceptingPrescription) return;
+    setIsSubmittingAccept(true);
+    const success = await updatePrescriptionStatus(acceptingPrescription._id, 'assigned', {
+      availabilityResponse,
+      customMessage,
+    });
+    setIsSubmittingAccept(false);
+    if (success) {
+      setAcceptingPrescription(null);
     }
   };
 
@@ -156,6 +234,8 @@ export default function DashboardPage() {
 
   const getOwnPharmacyStatus = (prescription: Prescription) =>
     prescription.pharmacyStatuses?.find((entry) => String(entry.pharmacyId) === pharmacyId)?.status || 'pending';
+  const getOwnPharmacyStatusEntry = (prescription: Prescription) =>
+    prescription.pharmacyStatuses?.find((entry) => String(entry.pharmacyId) === pharmacyId);
 
   const formatOwnStatus = (status: string) =>
     status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
@@ -251,6 +331,18 @@ export default function DashboardPage() {
                   <p><strong>Address:</strong> {prescription.patientAddress || 'Not provided'}</p>
                   <p><strong>Location:</strong> {prescription.location}</p>
                   <p><strong>Status:</strong> {formatOwnStatus(getOwnPharmacyStatus(prescription))}</p>
+                  {getOwnPharmacyStatus(prescription) === 'accepted' && (
+                    <p>
+                      <strong>Availability:</strong>{' '}
+                      {(() => {
+                        const ownEntry = prescription.pharmacyStatuses?.find(
+                          (entry) => String(entry.pharmacyId) === pharmacyId
+                        );
+                        const key = ownEntry?.availabilityResponse as AvailabilityOptionValue | undefined;
+                        return key ? AVAILABILITY_LABELS[key] : 'Not shared';
+                      })()}
+                    </p>
+                  )}
                   <p><strong>Date:</strong> {new Date(prescription.createdAt).toLocaleDateString()}</p>
                 </div>
 
@@ -283,12 +375,19 @@ export default function DashboardPage() {
                 )}
 
                 <button
-                  onClick={() =>
-                    updatePrescriptionStatus(
-                      prescription._id,
-                      getOwnPharmacyStatus(prescription) === 'pending' ? 'assigned' : 'request_fulfillment'
-                    )
-                  }
+                  onClick={() => {
+                    if (getOwnPharmacyStatus(prescription) === 'pending') {
+                      openAcceptModal(prescription);
+                      return;
+                    }
+                    const ownEntry = getOwnPharmacyStatusEntry(prescription);
+                    updatePrescriptionStatus(prescription._id, 'request_fulfillment', {
+                      availabilityResponse:
+                        (ownEntry?.availabilityResponse as AvailabilityOptionValue | undefined) ||
+                        'same_medicine_available',
+                      customMessage: ownEntry?.pharmacistMessage || '',
+                    });
+                  }}
                   disabled={getOwnPharmacyStatus(prescription) === 'fulfilled' || getOwnPharmacyStatus(prescription) === 'fulfillment_requested'}
                   className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 font-semibold text-slate-900 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -305,6 +404,62 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {acceptingPrescription && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6">
+            <h2 className="text-xl font-semibold text-white">Accept Prescription</h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Patient: {acceptingPrescription.patientName}
+            </p>
+
+            <label className="mt-5 block text-sm font-medium text-slate-200">Medicine availability</label>
+            <select
+              value={availabilityResponse}
+              onChange={(e) => setAvailabilityResponse(e.target.value as AvailabilityOptionValue)}
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 focus:border-cyan-300 focus:outline-none"
+            >
+              {AVAILABILITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <label className="mt-4 block text-sm font-medium text-slate-200">
+              Custom message (optional)
+            </label>
+            <textarea
+              value={customMessage}
+              onChange={(e) => setCustomMessage(e.target.value)}
+              maxLength={500}
+              rows={4}
+              placeholder="Write a custom message for the patient..."
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-400">{customMessage.length}/500</p>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={closeAcceptModal}
+                disabled={isSubmittingAccept}
+                className="flex-1 rounded-xl border border-white/20 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitAcceptDecision}
+                disabled={isSubmittingAccept}
+                className="flex-1 rounded-xl bg-emerald-300 px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmittingAccept ? 'Saving...' : 'Accept & Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

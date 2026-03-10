@@ -19,9 +19,14 @@ interface PharmacyDetail {
   address: string;
   location: string;
   status: 'pending' | 'accepted' | 'rejected' | 'fulfilled' | 'fulfillment_requested';
+  availabilityResponse?: 'not_available' | 'same_medicine_available' | 'same_salt_different_company' | null;
+  pharmacistMessage?: string;
   assignedAt?: string | null;
   completedAt?: string | null;
 }
+
+const STORAGE_PATIENT_NOTIFICATIONS_KEY = 'patient_notifications';
+const STORAGE_PATIENT_UNREAD_KEY = 'patient_notifications_unread';
 
 export default function HistoryPage() {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
@@ -94,6 +99,19 @@ export default function HistoryPage() {
     }
   };
 
+  const getAvailabilityLabel = (value: PharmacyDetail['availabilityResponse']) => {
+    switch (value) {
+      case 'not_available':
+        return 'Medicine not available';
+      case 'same_medicine_available':
+        return 'Same medicine available';
+      case 'same_salt_different_company':
+        return 'Same salt, different company available';
+      default:
+        return '';
+    }
+  };
+
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -143,6 +161,26 @@ export default function HistoryPage() {
       if (!response.ok) {
         setError(payload?.error || 'Failed to confirm fulfillment');
         return;
+      }
+
+      try {
+        const prescription = prescriptions.find((item) => item._id === prescriptionId);
+        const pharmacy = prescription?.pharmacyDetails?.find((item) => item.pharmacyId === pharmacyId);
+        const notification = {
+          id: `patient-confirm-${prescriptionId}-${pharmacyId}-${Date.now()}`,
+          title: 'Fulfillment confirmed',
+          message: `${pharmacy?.name || 'Pharmacy'} marked prescription as fulfilled.`,
+          createdAt: new Date().toISOString(),
+        };
+        const raw = localStorage.getItem(STORAGE_PATIENT_NOTIFICATIONS_KEY);
+        const existing = raw ? (JSON.parse(raw) as typeof notification[]) : [];
+        const merged = [notification, ...existing].slice(0, 100);
+        localStorage.setItem(STORAGE_PATIENT_NOTIFICATIONS_KEY, JSON.stringify(merged));
+        const unreadCount = Number(localStorage.getItem(STORAGE_PATIENT_UNREAD_KEY) || '0');
+        localStorage.setItem(STORAGE_PATIENT_UNREAD_KEY, String(unreadCount + 1));
+        window.dispatchEvent(new Event('notification-updated'));
+      } catch {
+        // Keep fulfillment action successful even if local notification storage fails.
       }
 
       setSuccessMessage('Fulfillment confirmed successfully.');
@@ -262,6 +300,16 @@ export default function HistoryPage() {
                                 <p className="text-xs text-indigo-100">
                                   This pharmacy requested your fulfillment confirmation.
                                 </p>
+                                {pharmacy.availabilityResponse && (
+                                  <p className="mt-1 text-xs text-indigo-100">
+                                    <strong>Availability:</strong> {getAvailabilityLabel(pharmacy.availabilityResponse)}
+                                  </p>
+                                )}
+                                {pharmacy.pharmacistMessage && (
+                                  <p className="mt-1 text-xs text-indigo-100">
+                                    <strong>Message:</strong> {pharmacy.pharmacistMessage}
+                                  </p>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => confirmFulfillment(prescription._id, pharmacy.pharmacyId)}
@@ -271,6 +319,16 @@ export default function HistoryPage() {
                                   {confirmingKey === `${prescription._id}-${pharmacy.pharmacyId}` ? 'Confirming...' : 'Confirm Fulfilled'}
                                 </button>
                               </div>
+                            )}
+                            {pharmacy.availabilityResponse && (
+                              <p className="mt-2 text-xs text-cyan-100">
+                                <strong>Availability:</strong> {getAvailabilityLabel(pharmacy.availabilityResponse)}
+                              </p>
+                            )}
+                            {pharmacy.pharmacistMessage && (
+                              <p className="mt-1 text-xs text-slate-300">
+                                <strong>Message:</strong> {pharmacy.pharmacistMessage}
+                              </p>
                             )}
                             {pharmacy.address && <p className="mt-1 text-slate-300">{pharmacy.address}</p>}
                             {pharmacy.location && <p className="text-slate-400">Area: {pharmacy.location}</p>}
