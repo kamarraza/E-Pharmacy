@@ -5,8 +5,9 @@ import { comparePassword, generateToken } from '@/lib/auth';
 export async function POST(request: NextRequest) {
   try {
     const { email, password, role } = await request.json();
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!email || !password || !role) {
+    if (!normalizedEmail || !password || !role) {
       return NextResponse.json({ error: 'Email, password, and role are required' }, { status: 400 });
     }
 
@@ -15,9 +16,17 @@ export async function POST(request: NextRequest) {
     }
 
     const UserModel = await getUserModel(role as 'patient' | 'pharmacist');
-    const user = await UserModel.findOne({ email });
+    const user = await UserModel.findOne({ email: normalizedEmail });
 
     if (!user) {
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    }
+
+    if (typeof user.password !== 'string' || !user.password) {
+      console.error('Login error: user record is missing a valid password hash', {
+        userId: String(user._id),
+        role,
+      });
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
