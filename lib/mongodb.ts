@@ -38,7 +38,10 @@ const connectionOptions: mongoose.ConnectOptions = {
 };
 
 const getMongoUris = () => {
-  const mainMongoUri = process.env.MONGODB_URI;
+  const mainMongoUri =
+    process.env.MONGODB_URI ||
+    process.env.MONGODB_URL ||
+    process.env.MONGO_URI;
   const patientMongoUri = process.env.PATIENT_MONGODB_URI || mainMongoUri;
   const pharmacistMongoUri = process.env.PHARMACIST_MONGODB_URI || mainMongoUri;
 
@@ -56,7 +59,9 @@ const getConnection = async (
   label: string
 ) => {
   if (!uri) {
-    throw new Error(`${label} MongoDB URI is not configured.`);
+    throw new Error(
+      `${label} MongoDB URI is not configured. Set ${label.toUpperCase()}_MONGODB_URI or MONGODB_URI (or MONGODB_URL / MONGO_URI).`
+    );
   }
 
   if (cached[connectionKey]) {
