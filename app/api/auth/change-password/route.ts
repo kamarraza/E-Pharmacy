@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { comparePassword, getUserFromToken, hashPassword } from '@/lib/auth';
+import { getDatabaseErrorResponse } from '@/lib/apiError';
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,6 +49,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: 'Password changed successfully' });
   } catch (error) {
     console.error('Change password error:', error);
+    const databaseErrorResponse = getDatabaseErrorResponse(error);
+    if (databaseErrorResponse) {
+      return databaseErrorResponse;
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
