@@ -128,7 +128,27 @@ To start the production server:
 npm start
 ```
 
-Deploy on platforms like Vercel, Netlify, or any Node.js hosting service. Ensure to set the `MONGODB_URI` environment variable in your deployment environment.
+Deploy on platforms like Vercel, Netlify, or any Node.js hosting service.
+
+### Deploying to Netlify
+
+This repository includes a `netlify.toml` configuration for the Netlify Next.js plugin.
+
+1. In your Netlify site settings, add these environment variables:
+   - `MONGODB_URI`
+   - `PATIENT_MONGODB_URI`
+   - `PHARMACIST_MONGODB_URI`
+   - `JWT_SECRET`
+   - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
+
+2. For MongoDB Atlas, allow Netlify to connect by adding a network access entry:
+   - `0.0.0.0/0` (required for serverless deployments)
+
+3. Do not store your MongoDB credentials in frontend code.
+
+4. If your build logs show a MongoDB connection error, verify the exact env variable names in Netlify and that the Atlas cluster allows connections from serverless IP ranges.
+
+> Netlify is frontend hosting plus serverless functions. Your backend is running inside Next.js API routes, so MongoDB must be reachable from those functions at runtime.
 
 ## Contributing
 
@@ -137,6 +157,3 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## License
 
 This project is licensed under the MIT License.
-# E-Pharmacy
-# E-Pharmacy
-# E-Pharmacy

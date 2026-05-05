@@ -4,6 +4,7 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Netlify UI: configure the MongoDB Atlas connection strings and JWT secret there.
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
