@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserModel } from '@/models/User';
 import { comparePassword, generateToken } from '@/lib/auth';
+import { getDatabaseErrorResponse } from '@/lib/apiError';
 
 export async function POST(request: NextRequest) {
   try {
@@ -63,6 +64,10 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     console.error('Login error:', error);
+    const databaseErrorResponse = getDatabaseErrorResponse(error);
+    if (databaseErrorResponse) {
+      return databaseErrorResponse;
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
